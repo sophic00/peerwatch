@@ -28,7 +28,7 @@ func WriteMessage(w io.Writer, msg Message) error {
 	case *HaveMsg:
 		encodeUint32Msg(&payload, m.ChunkIndex)
 	case *RequestMsg:
-		encodeUint32Msg(&payload, m.ChunkIndex)
+		encodeRequest(&payload, m)
 	case *PieceMsg:
 		encodePiece(&payload, m)
 	case *CancelMsg:
@@ -99,7 +99,7 @@ func ReadMessage(r io.Reader) (Message, error) {
 	case MsgHave:
 		return decodeHave(payload)
 	case MsgRequest:
-		return decodeRequest(payload)
+		return decodeRequestBatch(payload)
 	case MsgPiece:
 		return decodePiece(payload)
 	case MsgCancel:
@@ -230,13 +230,32 @@ func decodeHave(data []byte) (*HaveMsg, error) {
 	}, nil
 }
 
-func decodeRequest(data []byte) (*RequestMsg, error) {
+func encodeRequest(buf *bytes.Buffer, m *RequestMsg) {
+	binary.Write(buf, binary.BigEndian, uint32(len(m.ChunkIndices)))
+	for _, idx := range m.ChunkIndices {
+		binary.Write(buf, binary.BigEndian, idx)
+	}
+}
+
+func decodeRequestBatch(data []byte) (*RequestMsg, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("request message too short: %d bytes", len(data))
 	}
-	return &RequestMsg{
-		ChunkIndex: binary.BigEndian.Uint32(data[:4]),
-	}, nil
+	r := bytes.NewReader(data)
+
+	var count uint32
+	if err := binary.Read(r, binary.BigEndian, &count); err != nil {
+		return nil, fmt.Errorf("read request count: %w", err)
+	}
+
+	indices := make([]uint32, count)
+	for i := uint32(0); i < count; i++ {
+		if err := binary.Read(r, binary.BigEndian, &indices[i]); err != nil {
+			return nil, fmt.Errorf("read request index %d: %w", i, err)
+		}
+	}
+
+	return &RequestMsg{ChunkIndices: indices}, nil
 }
 
 func decodePiece(data []byte) (*PieceMsg, error) {

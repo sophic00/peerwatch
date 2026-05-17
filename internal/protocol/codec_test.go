@@ -85,11 +85,16 @@ func TestCodecRoundtrip(t *testing.T) {
 	})
 
 	t.Run("Request", func(t *testing.T) {
-		orig := &RequestMsg{ChunkIndex: 1337}
+		orig := &RequestMsg{ChunkIndices: []uint32{0, 42, 1337, 9999}}
 		decoded := roundtrip(t, orig)
 		got := decoded.(*RequestMsg)
-		if got.ChunkIndex != orig.ChunkIndex {
-			t.Errorf("ChunkIndex: got %d, want %d", got.ChunkIndex, orig.ChunkIndex)
+		if len(got.ChunkIndices) != len(orig.ChunkIndices) {
+			t.Fatalf("ChunkIndices count: got %d, want %d", len(got.ChunkIndices), len(orig.ChunkIndices))
+		}
+		for i, idx := range got.ChunkIndices {
+			if idx != orig.ChunkIndices[i] {
+				t.Errorf("ChunkIndices[%d]: got %d, want %d", i, idx, orig.ChunkIndices[i])
+			}
 		}
 	})
 

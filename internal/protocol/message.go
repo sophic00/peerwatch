@@ -65,15 +65,20 @@ type BitfieldMsg struct {
 func (m *BitfieldMsg) Type() byte { return MsgBitfield }
 
 // HaveMsg announces that this peer has acquired a new chunk.
+// NOTE: Unused in v1. Peers instead resend their full bitfield periodically
+// (every ~1s). Kept in the protocol for future optimization where real-time
+// per-chunk announcements are needed.
 type HaveMsg struct {
 	ChunkIndex uint32
 }
 
 func (m *HaveMsg) Type() byte { return MsgHave }
 
-// RequestMsg requests a specific chunk from a peer.
+// RequestMsg requests one or more chunks from a peer in a single message.
+// The responder sends back individual PieceMsg for each requested chunk.
+// Wire format: count uint32 + chunk_indices []uint32
 type RequestMsg struct {
-	ChunkIndex uint32
+	ChunkIndices []uint32
 }
 
 func (m *RequestMsg) Type() byte { return MsgRequest }
