@@ -14,20 +14,22 @@ sequenceDiagram
     participant A as Host A
 
     B->>A: TCP connect
-    note over A: Host accepts
+    note over A: accepts
 
     B->>A: HANDSHAKE {peer_id: B, version: 1}
     A->>B: HANDSHAKE {peer_id: A, version: 1}
 
-    A->>B: MANIFEST {filename, filesize, chunk_size, chunk_count, [{hash, size}...]}
+    A->>B: MANIFEST<br/>{filename, filesize, chunk_size,<br/>chunk_count, [{hash, size}…]}
 
-    A->>B: BITFIELD {1111...1} (host has all chunks)
+    A->>B: BITFIELD {1111…1}
+    note over A: has all chunks
 
     A->>B: PEER_LIST {["peer_C:port", "peer_D:port"]}
 
-    note over B,A: read/write goroutines start
+    note over B,A: read / write goroutines start
 
-    B->>A: BITFIELD {0000...0} (peer has nothing yet)
+    B->>A: BITFIELD {0000…0}
+    note over B: has no chunks yet
 ```
 
 **Order matters.** The host sends HANDSHAKE → MANIFEST → BITFIELD → PEER_LIST
@@ -40,19 +42,23 @@ calling `peer.Start()`.
 After receiving the PEER_LIST from the host, peer B connects to each listed
 peer. This is a **non-host** handshake — no manifest is sent:
 
-```
-Peer B                              Peer C
-  │                                   │
-  │──── TCP connect ────────────────→ │
-  │                                   │
-  │──── HANDSHAKE ──────────────────→ │  {peer_id: B, version: 1}
-  │←─── HANDSHAKE ────────────────── │  {peer_id: C, version: 1}
-  │                                   │
-  │  ┌─ read/write goroutines start ─┐│
-  │                                   │
-  │←─── BITFIELD ────────────────── │  {1100110...0} (C has some chunks)
-  │──── BITFIELD ──────────────────→ │  {0000000...0} (B has nothing)
-  │                                   │
+```mermaid
+sequenceDiagram
+    participant B as Peer B
+    participant C as Peer C
+
+    B->>C: TCP connect
+
+    B->>C: HANDSHAKE {peer_id: B, version: 1}
+    C->>B: HANDSHAKE {peer_id: C, version: 1}
+
+    note over B,C: read / write goroutines start
+
+    C->>B: BITFIELD {1100110…0}
+    note over C: has some chunks
+
+    B->>C: BITFIELD {0000000…0}
+    note over B: has no chunks yet
 ```
 
 Peer B already has the manifest from the host. Only bitfields are exchanged.
@@ -61,13 +67,17 @@ Peer B already has the manifest from the host. Only bitfields are exchanged.
 
 Once connected, chunks are requested and transferred asynchronously:
 
-```
-Peer B ──── REQUEST {chunks: [0,1,2,3]} ──→ Host A
+```mermaid
+sequenceDiagram
+    participant B as Peer B
+    participant A as Host A
 
-Host A ──── PIECE {chunk: 0, data: 512KB} ──→ Peer B
-Host A ──── PIECE {chunk: 1, data: 512KB} ──→ Peer B
-Host A ──── PIECE {chunk: 2, data: 512KB} ──→ Peer B
-Host A ──── PIECE {chunk: 3, data: 512KB} ──→ Peer B
+    B->>A: REQUEST {chunks: [0, 1, 2, 3]}
+
+    A->>B: PIECE {chunk: 0, data: 512KB}
+    A->>B: PIECE {chunk: 1, data: 512KB}
+    A->>B: PIECE {chunk: 2, data: 512KB}
+    A->>B: PIECE {chunk: 3, data: 512KB}
 ```
 
 - REQUEST is **batched** — multiple chunk indices in one message
@@ -78,11 +88,18 @@ Host A ──── PIECE {chunk: 3, data: 512KB} ──→ Peer B
 
 Every ~1 second, each peer sends its current bitfield to ALL connected peers:
 
-```
-Every 1 second:
-  Peer B ──── BITFIELD {0011110...0} ──→ Host A
-  Peer B ──── BITFIELD {0011110...0} ──→ Peer C
-  Peer B ──── BITFIELD {0011110...0} ──→ Peer D
+```mermaid
+sequenceDiagram
+    participant B as Peer B
+    participant A as Host A
+    participant C as Peer C
+    participant D as Peer D
+
+    loop every 1 second
+        B->>A: BITFIELD {0011110…0}
+        B->>C: BITFIELD {0011110…0}
+        B->>D: BITFIELD {0011110…0}
+    end
 ```
 
 This replaces per-chunk HAVE messages. It's self-correcting — if a bitfield
