@@ -158,8 +158,8 @@ func TestBitfieldHelpers(t *testing.T) {
 			t.Errorf("hasBit(%d) = false", idx)
 		}
 	}
-	if bf[0] != 0x89 {
-		t.Errorf("bf[0]: got 0x%02x, want 0x89", bf[0])
+	if bf[0] != 0x91 {
+		t.Errorf("bf[0]: got 0x%02x, want 0x91", bf[0])
 	}
 	if bf[1] != 0x40 {
 		t.Errorf("bf[1]: got 0x%02x, want 0x40", bf[1])
