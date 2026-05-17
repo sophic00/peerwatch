@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/sophic00/peerwatch.git/internal/chunk"
+	"github.com/sophic00/peerwatch.git/internal/peer"
 	"github.com/sophic00/peerwatch.git/internal/token"
 )
 
@@ -26,7 +28,8 @@ var supportedFormats = map[string]bool{
 }
 
 // Start implements the "peerwatch start <file>" command.
-// It validates the video file, builds a manifest, and starts the host.
+// It validates the video file, builds a manifest, starts the swarm,
+// and waits for peers.
 func Start(args []string) {
 	fs := flag.NewFlagSet("start", flag.ExitOnError)
 	port := fs.Int("port", 9876, "port to listen on")
@@ -74,6 +77,20 @@ func Start(args []string) {
 	}
 	defer store.Close()
 
+	// Create swarm
+	selfID := peer.GeneratePeerID()
+	swarm := peer.NewSwarm(selfID, store, manifest, true)
+	defer swarm.Close()
+
+	// Start listening
+	listenAddr := fmt.Sprintf(":%d", *port)
+	if err := swarm.Listen(listenAddr); err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+
+	// Start periodic bitfield broadcast (every 1s)
+	swarm.StartBitfieldBroadcast(1 * time.Second)
+
 	// Generate connection token
 	localIP := getLocalIP()
 	tok := &token.Token{
@@ -90,10 +107,9 @@ func Start(args []string) {
 	fmt.Printf("\n  %s\n\n", encoded)
 	fmt.Printf("join command:\n  ./peerwatch join %s\n\n", encoded)
 
-	log.Printf("room %s | host %s | %d chunks | waiting for peers...",
-		tok.RoomID, tok.Host, manifest.ChunkCount)
+	log.Printf("room %s | host %s | peer %s | %d chunks | waiting for peers...",
+		tok.RoomID, tok.Host, peer.FormatPeerID(selfID), manifest.ChunkCount)
 
-	// TODO(phase2): Start TCP listener and accept peer connections
 	// TODO(phase4): Start local HTTP server and launch mpv
 
 	// Block until interrupt
