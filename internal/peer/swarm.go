@@ -34,7 +34,20 @@ type Swarm struct {
 }
 
 // NewSwarm creates a new swarm.
+//
+// For a host swarm, store and manifest must be non-nil (the host has the
+// file from the start). For a joiner swarm, both may be nil — the joiner
+// receives the manifest from the host and creates the store afterward.
 func NewSwarm(selfID [16]byte, store *chunk.Store, manifest *chunk.Manifest, isHost bool) *Swarm {
+	if isHost {
+		if store == nil {
+			panic("peerwatch: host swarm requires a non-nil store")
+		}
+		if manifest == nil {
+			panic("peerwatch: host swarm requires a non-nil manifest")
+		}
+	}
+
 	var tracker *Tracker
 	if manifest != nil {
 		tracker = NewTracker(manifest.ChunkCount)
@@ -52,15 +65,27 @@ func NewSwarm(selfID [16]byte, store *chunk.Store, manifest *chunk.Manifest, isH
 
 // SetStore sets the chunk store. Used by joiners who create the store
 // after receiving the manifest from the host.
+//
+// Panics if called on a host swarm (host must provide store at creation).
 func (s *Swarm) SetStore(store *chunk.Store) {
+	if s.isHost {
+		panic("peerwatch: SetStore must not be called on a host swarm")
+	}
+	if store == nil {
+		panic("peerwatch: SetStore called with nil store")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.store = store
 }
 
 // Listen starts accepting incoming peer connections on the given address.
-// Used by the host.
+//
+// Panics if called on a non-host swarm.
 func (s *Swarm) Listen(addr string) error {
+	if !s.isHost {
+		panic("peerwatch: Listen must only be called on a host swarm")
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
@@ -124,7 +149,12 @@ func (s *Swarm) Connect(addr string) (*Peer, error) {
 
 // ConnectToHost connects to the host, receives manifest + peer list,
 // then connects to all other peers.
+//
+// Panics if called on a host swarm — the host does not connect to itself.
 func (s *Swarm) ConnectToHost(hostAddr string) (*chunk.Manifest, error) {
+	if s.isHost {
+		panic("peerwatch: ConnectToHost must not be called on a host swarm")
+	}
 	conn, err := net.DialTimeout("tcp", hostAddr, 5*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("dial host %s: %w", hostAddr, err)
@@ -274,21 +304,25 @@ func (s *Swarm) Peers() []*Peer {
 
 // StartBitfieldBroadcast periodically sends our bitfield to all peers.
 // This replaces per-chunk HAVE messages — simpler and self-correcting.
+//
+// This is a blocking function. The caller should run it in a goroutine:
+//
+//	go swarm.StartBitfieldBroadcast(1 * time.Second)
+//
+// Returns when the swarm is closed.
 func (s *Swarm) StartBitfieldBroadcast(interval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if s.store != nil {
-					s.Broadcast(&protocol.BitfieldMsg{Bitfield: s.store.Bitfield()})
-				}
-			case <-s.done:
-				return
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if s.store != nil {
+				s.Broadcast(&protocol.BitfieldMsg{Bitfield: s.store.Bitfield()})
 			}
+		case <-s.done:
+			return
 		}
-	}()
+	}
 }
 
 // Close shuts down the swarm: stops listener, disconnects all peers.

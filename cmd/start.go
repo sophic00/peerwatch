@@ -89,7 +89,7 @@ func Start(args []string) {
 	}
 
 	// Start periodic bitfield broadcast (every 1s)
-	swarm.StartBitfieldBroadcast(1 * time.Second)
+	go swarm.StartBitfieldBroadcast(1 * time.Second)
 
 	// Generate connection token
 	localIP := getLocalIP()

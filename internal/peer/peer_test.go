@@ -49,7 +49,7 @@ func TestSwarmHostPeerTransfer(t *testing.T) {
 	}
 
 	// Start host bitfield broadcast
-	hostSwarm.StartBitfieldBroadcast(200 * time.Millisecond)
+	go hostSwarm.StartBitfieldBroadcast(200 * time.Millisecond)
 
 	// Get the actual listen address (port 0 → random port)
 	hostAddr := hostSwarm.listener.Addr().String()
@@ -91,7 +91,7 @@ func TestSwarmHostPeerTransfer(t *testing.T) {
 	}
 
 	// Start peer bitfield broadcast
-	peerSwarm.StartBitfieldBroadcast(200 * time.Millisecond)
+	go peerSwarm.StartBitfieldBroadcast(200 * time.Millisecond)
 
 	// Give the connection time to establish
 	time.Sleep(100 * time.Millisecond)

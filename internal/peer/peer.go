@@ -23,8 +23,9 @@ type Peer struct {
 	outCh    chan protocol.Message // buffered channel for the write loop
 	bitfield []byte                // what chunks they have
 	speed    float64               // bytes/sec rolling average
-	inFlight map[uint32]time.Time  // chunk index → request time
-	done     chan struct{}
+	inFlight  map[uint32]time.Time  // chunk index → request time
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // NewPeer creates a Peer from an established connection.
@@ -45,14 +46,12 @@ func (p *Peer) Start(handler func(*Peer, protocol.Message)) {
 }
 
 // Close shuts down the peer connection and stops the read/write loops.
+// Safe to call from multiple goroutines concurrently.
 func (p *Peer) Close() {
-	select {
-	case <-p.done:
-		return // already closed
-	default:
+	p.closeOnce.Do(func() {
 		close(p.done)
-	}
-	p.conn.Close()
+		p.conn.Close()
+	})
 }
 
 // readLoop reads messages from the TCP connection and dispatches them.
