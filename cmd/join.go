@@ -11,6 +11,7 @@ import (
 
 	"github.com/sophic00/peerwatch.git/internal/chunk"
 	"github.com/sophic00/peerwatch.git/internal/peer"
+	"github.com/sophic00/peerwatch.git/internal/scheduler"
 	"github.com/sophic00/peerwatch.git/internal/token"
 )
 
@@ -68,67 +69,29 @@ func Join(args []string) {
 
 	// Wire up the swarm to write received chunks to the store
 	swarm.SetStore(store)
+
+	// Create scheduler
+	sched := scheduler.New(store, swarm)
+	defer sched.Stop()
+
+	// Wire up piece receipt: store the chunk, then notify the scheduler
 	swarm.OnPieceReceived = func(index uint32, data []byte) {
 		if err := store.WriteChunk(int(index), data); err != nil {
 			log.Printf("write chunk %d: %v", index, err)
 			return
 		}
-		log.Printf("received chunk %d/%d (%.1f%%)",
-			index+1, manifest.ChunkCount,
-			float64(store.Count())/float64(manifest.ChunkCount)*100)
+		sched.OnPieceReceived(index)
+
+		pct := float64(store.Count()) / float64(manifest.ChunkCount) * 100
+		log.Printf("chunk %d/%d (%.1f%%) | in-flight: %d",
+			store.Count(), manifest.ChunkCount, pct, sched.InFlightCount())
 	}
 
 	// Start periodic bitfield broadcast (every 1s)
 	go swarm.StartBitfieldBroadcast(1 * time.Second)
 
-	// Start a simple sequential download loop
-	// TODO(phase3): replace with proper scheduler
-	go func() {
-		for {
-			if store.IsComplete() {
-				log.Printf("download complete! file saved to %s", store.FilePath())
-				return
-			}
-
-			// Find next missing chunks and request them
-			missing := store.MissingChunks()
-			if len(missing) == 0 {
-				return
-			}
-
-			// Batch up to 4 chunks per request, send to peers that have them
-			batch := make([]uint32, 0, 4)
-			for _, idx := range missing {
-				if len(batch) >= 4 {
-					break
-				}
-				batch = append(batch, uint32(idx))
-			}
-
-			// Find a peer to request from
-			peers := swarm.Peers()
-			if len(peers) == 0 {
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
-
-			// Simple round-robin: request from first peer that has the chunks
-			for _, p := range peers {
-				peerBatch := make([]uint32, 0, len(batch))
-				for _, idx := range batch {
-					if p.HasChunk(int(idx)) {
-						peerBatch = append(peerBatch, idx)
-					}
-				}
-				if len(peerBatch) > 0 {
-					swarm.RequestChunks(p.ID, peerBatch)
-				}
-			}
-
-			// Wait a bit before next request cycle
-			time.Sleep(100 * time.Millisecond)
-		}
-	}()
+	// Start the scheduler (playback window + rarest-first)
+	go sched.Run()
 
 	// TODO(phase4): Start local HTTP server and launch mpv
 	// TODO(phase5): Start sync loop
