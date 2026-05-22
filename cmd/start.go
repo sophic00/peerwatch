@@ -162,6 +162,8 @@ func getLocalIP() string {
 // generateRoomID returns a random 8-character hex string.
 func generateRoomID() string {
 	b := make([]byte, 4)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("generate room ID: %v", err))
+	}
 	return hex.EncodeToString(b)
 }
