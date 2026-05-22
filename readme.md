@@ -80,6 +80,9 @@ peerwatch/
 │   │   ├── swarm.go                 # Full-mesh manager
 │   │   ├── tracker.go               # Chunk availability tracker
 │   │   └── peer_test.go
+│   ├── player/
+│   │   ├── mpv.go                   # mpv process JSON-RPC socket control
+│   │   └── server.go                # HTTP Range-request server for mpv
 │   ├── protocol/
 │   │   ├── message.go               # 10 wire protocol message types
 │   │   ├── codec.go                 # Binary encode/decode
@@ -90,13 +93,17 @@ peerwatch/
 │   │   ├── strategy.go              # Chunk priority + peer scoring
 │   │   ├── scheduler_test.go
 │   │   └── strategy_test.go
+│   ├── sync/
+│   │   ├── sync.go                  # P2P playback synchronization
+│   │   └── sync_test.go
 │   └── token/
 │       ├── token.go                 # Connection token (base64url)
 │       └── token_test.go
 └── docs/
     ├── architecture.md              # High-level design & topology
     ├── types.md                     # Struct reference & ownership graph
-    └── protocol_sequence.md         # Message ordering & sequences
+    ├── protocol_sequence.md         # Message ordering & sequences
+    └── security.md                  # Threat model & security assumptions
 ```
 
 ## Documentation
@@ -104,12 +111,13 @@ peerwatch/
 - **[Architecture Overview](docs/architecture.md)** — how PeerWatch works, network topology, chunk strategy
 - **[Type Reference](docs/types.md)** — every struct, its fields, ownership graph, invariants
 - **[Protocol Sequence](docs/protocol_sequence.md)** — exact message ordering for connections, transfers, sync
+- **[Security & Threat Model](docs/security.md)** — IP address visibility, trusted media parsing, and unencrypted traffic considerations
 
 ## Requirements
 
 - **Go 1.26+**
 - **Linux** (other platforms untested)
-- **mpv** (for video playback, Phase 4+)
+- **mpv** (for synchronized video playback)
 
 ## License
 

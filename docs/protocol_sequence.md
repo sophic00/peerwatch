@@ -110,7 +110,7 @@ The receiving peer updates:
 1. The sender's `Peer.bitfield` (for `HasChunk` queries)
 2. The `Tracker.availability` map (for rarity calculations)
 
-## 5. Playback Sync (Phase 5)
+## 5. Playback Sync
 
 Every 2 seconds, the host broadcasts its playback position:
 
@@ -148,8 +148,8 @@ No explicit "goodbye" message is sent. TCP close is the signal.
 | BITFIELD  | After handshake + every 1s         | Everyone    | chunkCount/8 bytes   |
 | REQUEST   | When scheduler needs chunks        | Downloaders | 8 + 4×N bytes        |
 | PIECE     | In response to REQUEST             | Uploaders   | 4 + chunkSize bytes  |
-| SYNC      | Every 2s (Phase 5)                 | Host        | 17 bytes             |
+| SYNC      | Every 2s                           | Host        | 17 bytes             |
 | PEER_LIST | After handshake (host→joiner)      | Host        | variable             |
-| KEEPALIVE | Every 30s (Phase 6)                | Everyone    | 0 bytes              |
+| KEEPALIVE | Every 30s                          | Everyone    | 0 bytes              |
 | HAVE      | _Reserved for v2_                  | —           | 8 bytes              |
 | CANCEL    | _Not yet implemented_              | —           | 8 bytes              |

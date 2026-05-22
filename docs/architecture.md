@@ -38,9 +38,9 @@ graph TD
    - Instead of per-chunk HAVE announcements, each peer broadcasts its full
      bitfield every ~1 second — simpler, fewer messages, self-correcting
 
-5. **Playback** (Phase 4-5, not yet implemented)
-   - A local HTTP server serves the video to mpv via Range requests
-   - The host broadcasts playback position every 2s; peers adjust to match
+5. **Playback**
+   - A local HTTP server serves the video chunks to mpv via Range requests
+   - The host broadcasts the playback position every 2s; peers adjust their playback speed or seek to match and synchronize.
 
 ## Network Topology
 
@@ -85,7 +85,7 @@ goroutines (reader + writer). At 10 peers, that's 18 goroutines — trivial.
 - **Storage**: Host wraps original file; peers use a sparse file filled at
   correct byte offsets as chunks arrive
 
-The scheduler (Phase 3) will use a hybrid strategy:
+The scheduler uses a hybrid strategy:
 
 1. **Playback window first** — sequential chunks near the playback cursor
 2. **Rarest-first** — for remaining download capacity, prefer chunks that

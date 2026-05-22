@@ -81,17 +81,21 @@ Each Peer runs **2 goroutines** on a single TCP connection (full duplex):
 ### `Swarm`
 Manages the full mesh of all peer connections.
 
-| Field             | Type                              | Description                          |
-|-------------------|-----------------------------------|--------------------------------------|
-| `selfID`          | `[16]byte`                        | This node's peer ID                  |
-| `isHost`          | `bool`                            | True if this is the room host        |
-| `store`           | `*chunk.Store`                    | Local chunk storage                  |
-| `manifest`        | `*chunk.Manifest`                 | Video file manifest                  |
-| `tracker`         | `*Tracker`                        | Chunk availability across all peers  |
-| `peers`           | `map[[16]byte]*Peer`              | Connected peers by ID                |
-| `listener`        | `net.Listener`                    | TCP listener (host only)             |
-| `OnPieceReceived` | `func(index uint32, data []byte)` | Callback when a chunk arrives        |
-| `done`            | `chan struct{}`                    | Closed on shutdown                   |
+| Field                | Type                              | Description                          |
+|----------------------|-----------------------------------|--------------------------------------|
+| `selfID`             | `[16]byte`                        | This node's peer ID                  |
+| `isHost`             | `bool`                            | True if this is the room host        |
+| `store`              | `*chunk.Store`                    | Local chunk storage                  |
+| `manifest`           | `*chunk.Manifest`                 | Video file manifest                  |
+| `tracker`            | `*Tracker`                        | Chunk availability across all peers  |
+| `peers`              | `map[[16]byte]*Peer`              | Connected peers by ID                |
+| `listener`           | `net.Listener`                    | TCP listener (host only)             |
+| `hostAddr`           | `string`                          | Host address we connected to (joiner only) |
+| `OnPieceReceived`    | `func(index uint32, data []byte)` | Callback when a chunk arrives        |
+| `OnManifest`         | `func(manifest *chunk.Manifest)`  | Callback when joiner receives manifest |
+| `OnSyncReceived`     | `func(msg *protocol.SyncMsg)`     | Callback when joiner receives SYNC   |
+| `OnPeerDisconnected` | `func(peerID [16]byte, inFlightChunks []uint32)` | Callback when peer disconnects |
+| `done`               | `chan struct{}`                    | Closed on shutdown                   |
 
 **Invariants:**
 - Host swarm: `store` and `manifest` must be non-nil at creation
@@ -152,6 +156,58 @@ Connection info encoded as a compact base64url string.
 
 ---
 
+## Package `internal/scheduler`
+
+### `Scheduler`
+Orchestrates chunk downloads across the swarm using priority queues and rate throttling.
+
+| Field | Type | Description |
+|---|---|---|
+| `store` | `*chunk.Store` | Reference to local chunk storage |
+| `swarm` | `*peer.Swarm` | Reference to the peer swarm |
+| `cursor` | `int` | Current playback index (tells scheduler where sequential demands are) |
+| `inFlight` | `map[int]struct{}` | Map of chunk indices currently in-flight globally |
+| `urgent` | `map[int]struct{}` | Set of chunk indices needed immediately by player read blocks |
+
+---
+
+## Package `internal/player`
+
+### `Player`
+Controls the local `mpv` process using its JSON-RPC socket IPC interface.
+
+| Field | Type | Description |
+|---|---|---|
+| `cmd` | `*exec.Cmd` | The mpv subprocess |
+| `ipcPath` | `string` | Path to mpv's IPC socket file |
+| `conn` | `net.Conn` | Connection to the mpv socket |
+| `pending` | `map[uint64]chan ipcResponse` | Waiters for RPC command responses |
+
+### `Server`
+A local HTTP server that streams video content to `mpv` via Range requests.
+
+| Field | Type | Description |
+|---|---|---|
+| `store` | `*chunk.Store` | Chunk storage where video chunks are loaded |
+| `scheduler` | `*scheduler.Scheduler` | The download scheduler to escalate missing chunks |
+| `listener` | `net.Listener` | The TCP localhost listener |
+| `port` | `int` | Randomly assigned localhost port |
+
+---
+
+## Package `internal/sync`
+
+### `SyncManager`
+Coordinates playback seek, play, and pause events to keep peers in sync with the room host.
+
+| Field | Type | Description |
+|---|---|---|
+| `swarm` | `*peer.Swarm` | The peer mesh swarm |
+| `player` | `*player.Player` | The local mpv controller |
+| `isHost` | `bool` | True if this node is the host (who broadcasts SYNC) |
+
+---
+
 ## Ownership Graph
 
 ```
@@ -166,8 +222,16 @@ cmd/start.go or cmd/join.go
   │           ├── holds net.Conn
   │           ├── holds outCh (write queue)
   │           └── holds bitfield + inFlight state
-  └── sets Swarm.OnPieceReceived callback
+  ├── creates scheduler.Scheduler (joiner only)
+  │     ├── holds *chunk.Store (reference)
+  │     └── holds *peer.Swarm (reference)
+  ├── creates player.Server (local HTTP stream server)
+  │     ├── holds *chunk.Store
+  │     └── holds *scheduler.Scheduler (or nil for host)
+  ├── creates player.Player (mpv process controller)
+  └── creates sync.SyncManager
+        ├── holds *peer.Swarm
+        └── holds *player.Player
 ```
 
-The CLI layer owns the Store and Swarm. The Swarm references (not owns) the
-Store and Manifest. Each Peer owns its TCP connection.
+The CLI layer (`cmd/start.go` or `cmd/join.go`) owns the Store, Swarm, Scheduler, Player Server, and Player Controller, coordinating lifetimes across all modules. Peers in the Swarm own their TCP read/write goroutines and connections.
