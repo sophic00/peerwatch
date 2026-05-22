@@ -146,11 +146,12 @@ peerwatch/
 - [x] Blocking demand read-seeker for chunks not yet downloaded
 - [x] Player-to-scheduler playback cursor feedback loop (polls pos/duration to update cursor)
 
-### 🔲 Phase 5 — Playback Sync
+### ✅ Phase 5 — Playback Sync
 
-- [ ] Host broadcasts playback position every 2s
-- [ ] Peer drift detection and correction (speed adjust / hard seek)
-- [ ] Pause/resume synchronization
+- [x] Host broadcasts playback position and play/pause state every 2s
+- [x] Peer drift detection using latency-adjusted target absolute position
+- [x] 3-tier correction mechanism (smooth speed adjustment to 1.05x/0.95x, hard absolute seek > 2.0s)
+- [x] Instant pause/resume state propagation across the mesh
 
 ### 🔲 Phase 6 — Polish
 

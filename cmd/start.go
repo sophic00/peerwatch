@@ -17,6 +17,7 @@ import (
 	"github.com/sophic00/peerwatch.git/internal/chunk"
 	"github.com/sophic00/peerwatch.git/internal/peer"
 	"github.com/sophic00/peerwatch.git/internal/player"
+	"github.com/sophic00/peerwatch.git/internal/sync"
 	"github.com/sophic00/peerwatch.git/internal/token"
 )
 
@@ -131,6 +132,11 @@ func Start(args []string) {
 	if err := mpvPlayer.Start(httpServer.URL()); err != nil {
 		log.Printf("failed to start mpv player: %v (make sure mpv is installed)", err)
 	}
+
+	// Start sync manager
+	syncMgr := sync.NewSyncManager(swarm, mpvPlayer, true)
+	syncMgr.Start()
+	defer syncMgr.Stop()
 
 	// Block until interrupt
 	sigCh := make(chan os.Signal, 1)

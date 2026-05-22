@@ -29,6 +29,7 @@ type Swarm struct {
 	// Callbacks for higher layers
 	OnPieceReceived func(index uint32, data []byte) // called when a PIECE arrives
 	OnManifest      func(manifest *chunk.Manifest)   // called when joiner receives manifest
+	OnSyncReceived  func(msg *protocol.SyncMsg)      // called when joiner receives a SYNC message from host
 
 	done chan struct{}
 }
@@ -495,7 +496,9 @@ func (s *Swarm) handleMessage(from *Peer, msg protocol.Message) {
 		}
 
 	case *protocol.SyncMsg:
-		// TODO(phase5): forward to sync manager
+		if s.OnSyncReceived != nil {
+			s.OnSyncReceived(m)
+		}
 
 	case *protocol.PeerListMsg:
 		// Connect to any new peers we don't already know

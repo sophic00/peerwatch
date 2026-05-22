@@ -13,6 +13,7 @@ import (
 	"github.com/sophic00/peerwatch.git/internal/peer"
 	"github.com/sophic00/peerwatch.git/internal/player"
 	"github.com/sophic00/peerwatch.git/internal/scheduler"
+	"github.com/sophic00/peerwatch.git/internal/sync"
 	"github.com/sophic00/peerwatch.git/internal/token"
 )
 
@@ -157,7 +158,10 @@ func Join(args []string) {
 		}
 	}()
 
-	// TODO(phase5): Start sync loop
+	// Start sync manager
+	syncMgr := sync.NewSyncManager(swarm, mpvPlayer, false)
+	syncMgr.Start()
+	defer syncMgr.Stop()
 
 	log.Printf("peer %s | downloading from %d peers...",
 		peer.FormatPeerID(selfID), swarm.PeerCount())

@@ -55,6 +55,14 @@ func NewPlayer() (*Player, error) {
 	}, nil
 }
 
+// SetConnForTest injects a custom connection and starts the read loop for testing purposes.
+func (p *Player) SetConnForTest(conn net.Conn) {
+	p.mu.Lock()
+	p.conn = conn
+	p.mu.Unlock()
+	go p.readLoop()
+}
+
 // Start launches the mpv process and connects to its IPC interface.
 func (p *Player) Start(videoURL string) error {
 	p.cmd = exec.Command("mpv",
