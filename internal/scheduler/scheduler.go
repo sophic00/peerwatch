@@ -79,6 +79,19 @@ func (s *Scheduler) OnPieceReceived(index uint32) {
 	s.urgentMu.Unlock()
 }
 
+// ReleaseInFlight clears specific chunks from the in-flight list, allowing
+// them to be rescheduled immediately (e.g. if the peer they were assigned to disconnected).
+func (s *Scheduler) ReleaseInFlight(indices []uint32) {
+	if len(indices) == 0 {
+		return
+	}
+	s.mu.Lock()
+	for _, idx := range indices {
+		delete(s.inFlight, int(idx))
+	}
+	s.mu.Unlock()
+}
+
 // Run starts the scheduler loop. Blocks until Stop is called or the
 // download completes.
 //

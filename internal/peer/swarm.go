@@ -30,6 +30,7 @@ type Swarm struct {
 	OnPieceReceived func(index uint32, data []byte) // called when a PIECE arrives
 	OnManifest      func(manifest *chunk.Manifest)   // called when joiner receives manifest
 	OnSyncReceived  func(msg *protocol.SyncMsg)      // called when joiner receives a SYNC message from host
+	OnPeerDisconnected func(peerID [16]byte, inFlightChunks []uint32) // called when a peer disconnects
 
 	done chan struct{}
 }
@@ -537,6 +538,13 @@ func (s *Swarm) addPeer(p *Peer) {
 		if s.tracker != nil {
 			s.tracker.RemovePeer(p.ID)
 		}
+
+		// Retrieve in-flight chunks for this peer to release them in the scheduler
+		inFlight := p.InFlightChunks()
+		if s.OnPeerDisconnected != nil {
+			s.OnPeerDisconnected(p.ID, inFlight)
+		}
+
 		log.Printf("peer disconnected: %s (%s) [%d peers remaining]",
 			FormatPeerID(p.ID), p.Addr, s.PeerCount())
 	}()

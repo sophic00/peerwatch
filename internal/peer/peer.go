@@ -151,6 +151,17 @@ func (p *Peer) InFlightCount() int {
 	return len(p.inFlight)
 }
 
+// InFlightChunks returns a list of chunk indices currently requested from this peer.
+func (p *Peer) InFlightChunks() []uint32 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	indices := make([]uint32, 0, len(p.inFlight))
+	for idx := range p.inFlight {
+		indices = append(indices, idx)
+	}
+	return indices
+}
+
 // Speed returns the estimated download speed in bytes/sec.
 func (p *Peer) Speed() float64 {
 	p.mu.RLock()
