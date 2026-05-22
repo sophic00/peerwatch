@@ -284,6 +284,15 @@ func (s *Swarm) PeerCount() int {
 	return len(s.peers)
 }
 
+// ListenAddr returns the address the swarm is listening on.
+// Returns empty string if not listening.
+func (s *Swarm) ListenAddr() string {
+	if s.listener == nil {
+		return ""
+	}
+	return s.listener.Addr().String()
+}
+
 // GetPeer returns a peer by ID.
 func (s *Swarm) GetPeer(id [16]byte) *Peer {
 	s.mu.RLock()

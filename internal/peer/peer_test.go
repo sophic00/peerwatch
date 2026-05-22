@@ -52,7 +52,7 @@ func TestSwarmHostPeerTransfer(t *testing.T) {
 	go hostSwarm.StartBitfieldBroadcast(200 * time.Millisecond)
 
 	// Get the actual listen address (port 0 → random port)
-	hostAddr := hostSwarm.listener.Addr().String()
+	hostAddr := hostSwarm.ListenAddr()
 
 	// --- Peer setup ---
 	peerID := GeneratePeerID()
