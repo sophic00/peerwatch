@@ -139,11 +139,12 @@ peerwatch/
 - [x] Configurable concurrency (4 per-peer, 16 global in-flight cap)
 - [x] Integration test: scheduler-driven 10-chunk download with SHA-256 verification
 
-### 🔲 Phase 4 — Video Playback
+### ✅ Phase 4 — Video Playback
 
-- [ ] Local HTTP server serving video via Range requests
-- [ ] mpv launch via Unix socket IPC
-- [ ] Blocking reads for chunks not yet downloaded
+- [x] Local HTTP server serving video via standard HTTP Range requests
+- [x] mpv process runner with Unix socket JSON-RPC IPC controller
+- [x] Blocking demand read-seeker for chunks not yet downloaded
+- [x] Player-to-scheduler playback cursor feedback loop (polls pos/duration to update cursor)
 
 ### 🔲 Phase 5 — Playback Sync
 

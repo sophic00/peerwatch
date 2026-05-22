@@ -16,6 +16,7 @@ import (
 
 	"github.com/sophic00/peerwatch.git/internal/chunk"
 	"github.com/sophic00/peerwatch.git/internal/peer"
+	"github.com/sophic00/peerwatch.git/internal/player"
 	"github.com/sophic00/peerwatch.git/internal/token"
 )
 
@@ -110,7 +111,26 @@ func Start(args []string) {
 	log.Printf("room %s | host %s | peer %s | %d chunks | waiting for peers...",
 		tok.RoomID, tok.Host, peer.FormatPeerID(selfID), manifest.ChunkCount)
 
-	// TODO(phase4): Start local HTTP server and launch mpv
+	// Start local HTTP server (host has all chunks, so no scheduler is needed for the server)
+	httpServer, err := player.NewServer(store, nil)
+	if err != nil {
+		log.Fatalf("failed to create HTTP server: %v", err)
+	}
+	defer httpServer.Close()
+	httpServer.Start()
+	log.Printf("local HTTP streaming server started at %s", httpServer.URL())
+
+	// Launch mpv
+	mpvPlayer, err := player.NewPlayer()
+	if err != nil {
+		log.Fatalf("failed to create mpv player: %v", err)
+	}
+	defer mpvPlayer.Close()
+
+	log.Printf("launching mpv player playing from local HTTP server...")
+	if err := mpvPlayer.Start(httpServer.URL()); err != nil {
+		log.Printf("failed to start mpv player: %v (make sure mpv is installed)", err)
+	}
 
 	// Block until interrupt
 	sigCh := make(chan os.Signal, 1)

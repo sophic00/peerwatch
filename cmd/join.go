@@ -11,6 +11,7 @@ import (
 
 	"github.com/sophic00/peerwatch.git/internal/chunk"
 	"github.com/sophic00/peerwatch.git/internal/peer"
+	"github.com/sophic00/peerwatch.git/internal/player"
 	"github.com/sophic00/peerwatch.git/internal/scheduler"
 	"github.com/sophic00/peerwatch.git/internal/token"
 )
@@ -93,7 +94,69 @@ func Join(args []string) {
 	// Start the scheduler (playback window + rarest-first)
 	go sched.Run()
 
-	// TODO(phase4): Start local HTTP server and launch mpv
+	// Start local HTTP server
+	httpServer, err := player.NewServer(store, sched)
+	if err != nil {
+		log.Fatalf("failed to create HTTP server: %v", err)
+	}
+	defer httpServer.Close()
+	httpServer.Start()
+	log.Printf("local HTTP streaming server started at %s", httpServer.URL())
+
+	// Launch mpv
+	mpvPlayer, err := player.NewPlayer()
+	if err != nil {
+		log.Fatalf("failed to create mpv player: %v", err)
+	}
+	defer mpvPlayer.Close()
+
+	log.Printf("launching mpv player playing from local HTTP server...")
+	if err := mpvPlayer.Start(httpServer.URL()); err != nil {
+		log.Printf("failed to start mpv player: %v (make sure mpv is installed)", err)
+	}
+
+	// Done channel to stop background goroutines on exit
+	doneCh := make(chan struct{})
+	defer close(doneCh)
+
+	// Start cursor feedback loop: feeds current mpv playback position into the scheduler
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+
+		var duration float64
+		for {
+			select {
+			case <-ticker.C:
+				if duration == 0 {
+					d, err := mpvPlayer.GetDuration()
+					if err == nil && d > 0 {
+						duration = d
+						log.Printf("video duration detected: %.2fs", duration)
+					}
+				}
+
+				if duration > 0 {
+					pos, err := mpvPlayer.GetPlaybackTime()
+					if err == nil {
+						// Map time to chunk index
+						byteOffset := int64((pos / duration) * float64(manifest.FileSize))
+						chunkIndex := int(byteOffset / manifest.ChunkSize)
+						if chunkIndex >= manifest.ChunkCount {
+							chunkIndex = manifest.ChunkCount - 1
+						}
+						if chunkIndex < 0 {
+							chunkIndex = 0
+						}
+						sched.SetCursor(chunkIndex)
+					}
+				}
+			case <-doneCh:
+				return
+			}
+		}
+	}()
+
 	// TODO(phase5): Start sync loop
 
 	log.Printf("peer %s | downloading from %d peers...",
