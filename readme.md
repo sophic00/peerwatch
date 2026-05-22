@@ -85,6 +85,11 @@ peerwatch/
 │   │   ├── codec.go                 # Binary encode/decode
 │   │   ├── handler.go               # Handler dispatch interface
 │   │   └── codec_test.go
+│   ├── scheduler/
+│   │   ├── scheduler.go             # Download orchestration loop
+│   │   ├── strategy.go              # Chunk priority + peer scoring
+│   │   ├── scheduler_test.go
+│   │   └── strategy_test.go
 │   └── token/
 │       ├── token.go                 # Connection token (base64url)
 │       └── token_test.go
@@ -125,12 +130,14 @@ peerwatch/
 - [x] Download speed estimation (exponential moving average)
 - [x] Integration test: host + peer localhost transfer with SHA-256 verification
 
-### 🔲 Phase 3 — Scheduler
+### ✅ Phase 3 — Scheduler
 
-- [ ] Playback-window-first chunk priority
-- [ ] Rarest-first scheduling for remaining capacity
-- [ ] Per-peer request pipelining (concurrent in-flight limit)
-- [ ] Peer selection (prefer faster peers)
+- [x] 3-tier chunk priority: urgent demand → playback window → rarest-first
+- [x] Peer scoring: `speed / (1 + inFlightCount)` with EMA speed estimation
+- [x] 50ms scheduler tick loop with batch REQUEST dispatch
+- [x] Demand channel for HTTP server (urgent chunk requests)
+- [x] Configurable concurrency (4 per-peer, 16 global in-flight cap)
+- [x] Integration test: scheduler-driven 10-chunk download with SHA-256 verification
 
 ### 🔲 Phase 4 — Video Playback
 
