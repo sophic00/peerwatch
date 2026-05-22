@@ -153,12 +153,12 @@ peerwatch/
 - [x] 3-tier correction mechanism (smooth speed adjustment to 1.05x/0.95x, hard absolute seek > 2.0s)
 - [x] Instant pause/resume state propagation across the mesh
 
-### 🔲 Phase 6 — Polish
+### ✅ Phase 6 — Polish
 
-- [ ] Keepalive messages (30s interval)
-- [ ] Graceful reconnection on peer drop
-- [ ] Download progress display
-- [ ] Cancel in-flight requests on peer disconnect
+- [x] Periodic TCP Keepalive broadcasts (30s interval) to prevent connection timeouts
+- [x] Graceful automatic host reconnection loop (5s interval) for joiners
+- [x] Continuous console download progress statistics live updates (1s interval)
+- [x] Instant release and rescheduling of in-flight requests on peer disconnect
 
 ## Requirements
 

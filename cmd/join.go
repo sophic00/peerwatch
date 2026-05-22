@@ -89,6 +89,15 @@ func Join(args []string) {
 			store.Count(), manifest.ChunkCount, pct, sched.InFlightCount())
 	}
 
+	// Wire up peer disconnection: release in-flight chunks so they can be rescheduled instantly
+	swarm.OnPeerDisconnected = func(peerID [16]byte, inFlightChunks []uint32) {
+		if len(inFlightChunks) > 0 {
+			log.Printf("peer %s disconnected | releasing %d in-flight chunks to scheduler pool",
+				peer.FormatPeerID(peerID), len(inFlightChunks))
+			sched.ReleaseInFlight(inFlightChunks)
+		}
+	}
+
 	// Start periodic bitfield broadcast (every 1s)
 	go swarm.StartBitfieldBroadcast(1 * time.Second)
 
@@ -162,6 +171,47 @@ func Join(args []string) {
 	syncMgr := sync.NewSyncManager(swarm, mpvPlayer, false)
 	syncMgr.Start()
 	defer syncMgr.Stop()
+
+	// Start periodic TCP keepalive broadcast
+	go swarm.StartKeepaliveLoop()
+
+	// Start periodic host connection auto-reconnection loop
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if !swarm.HasHostConnection() {
+					log.Printf("Host connection lost! Attempting to reconnect to %s...", tok.Host)
+					_, err := swarm.ConnectToHost(tok.Host)
+					if err != nil {
+						log.Printf("Reconnection to host failed: %v", err)
+					} else {
+						log.Printf("Successfully reconnected to host %s!", tok.Host)
+					}
+				}
+			case <-doneCh:
+				return
+			}
+		}
+	}()
+
+	// Start periodic download progress status display
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				pct := float64(store.Count()) / float64(manifest.ChunkCount) * 100
+				log.Printf("Status | Progress: %d/%d chunks (%.1f%%) | Connected Peers: %d | In-Flight: %d",
+					store.Count(), manifest.ChunkCount, pct, swarm.PeerCount(), sched.InFlightCount())
+			case <-doneCh:
+				return
+			}
+		}
+	}()
 
 	log.Printf("peer %s | downloading from %d peers...",
 		peer.FormatPeerID(selfID), swarm.PeerCount())

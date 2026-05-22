@@ -123,3 +123,34 @@ done:
 
 	t.Logf("scheduler-driven download complete: 10 chunks, file verified")
 }
+
+func TestReleaseInFlight(t *testing.T) {
+	sched := New(nil, nil)
+
+	sched.mu.Lock()
+	sched.inFlight[5] = struct{}{}
+	sched.inFlight[6] = struct{}{}
+	sched.mu.Unlock()
+
+	if count := sched.InFlightCount(); count != 2 {
+		t.Errorf("expected 2 in-flight, got %d", count)
+	}
+
+	sched.ReleaseInFlight([]uint32{5, 7}) // 7 is not in-flight, should handle gracefully
+
+	if count := sched.InFlightCount(); count != 1 {
+		t.Errorf("expected 1 in-flight, got %d", count)
+	}
+
+	sched.mu.Lock()
+	_, has5 := sched.inFlight[5]
+	_, has6 := sched.inFlight[6]
+	sched.mu.Unlock()
+
+	if has5 {
+		t.Error("chunk 5 should have been released")
+	}
+	if !has6 {
+		t.Error("chunk 6 should still be in-flight")
+	}
+}

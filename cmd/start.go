@@ -138,6 +138,9 @@ func Start(args []string) {
 	syncMgr.Start()
 	defer syncMgr.Stop()
 
+	// Start periodic TCP keepalive broadcast
+	go swarm.StartKeepaliveLoop()
+
 	// Block until interrupt
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

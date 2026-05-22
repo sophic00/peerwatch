@@ -2,6 +2,7 @@ package peer
 
 import (
 	"crypto/sha256"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -179,5 +180,39 @@ func TestTrackerRarity(t *testing.T) {
 	}
 	if r := tracker.Rarity(1); r != 1 {
 		t.Errorf("after remove A, rarity(1): got %d, want 1", r)
+	}
+}
+
+func TestPeerInFlightChunksAndDisconnect(t *testing.T) {
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+
+	p := NewPeer(c1)
+	p.MarkInFlight(5)
+	p.MarkInFlight(10)
+
+	chunks := p.InFlightChunks()
+	if len(chunks) != 2 {
+		t.Errorf("expected 2 in-flight chunks, got %d", len(chunks))
+	}
+
+	has5, has10 := false, false
+	for _, c := range chunks {
+		if c == 5 {
+			has5 = true
+		}
+		if c == 10 {
+			has10 = true
+		}
+	}
+	if !has5 || !has10 {
+		t.Errorf("missing chunk indices from InFlightChunks: got %v", chunks)
+	}
+
+	p.ClearInFlight(5, 512)
+	chunks = p.InFlightChunks()
+	if len(chunks) != 1 || chunks[0] != 10 {
+		t.Errorf("expected only chunk 10 to be left in-flight, got %v", chunks)
 	}
 }

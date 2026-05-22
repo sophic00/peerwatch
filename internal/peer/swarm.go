@@ -25,6 +25,7 @@ type Swarm struct {
 	tracker  *Tracker
 	peers    map[[16]byte]*Peer
 	listener net.Listener
+	hostAddr string // joiner only: address of the host we connected to
 
 	// Callbacks for higher layers
 	OnPieceReceived func(index uint32, data []byte) // called when a PIECE arrives
@@ -162,6 +163,10 @@ func (s *Swarm) ConnectToHost(hostAddr string) (*chunk.Manifest, error) {
 		return nil, fmt.Errorf("dial host %s: %w", hostAddr, err)
 	}
 
+	s.mu.Lock()
+	s.hostAddr = hostAddr
+	s.mu.Unlock()
+
 	// Handshake
 	if err := protocol.WriteMessage(conn, &protocol.HandshakeMsg{
 		PeerID:  s.selfID,
@@ -293,6 +298,36 @@ func (s *Swarm) ListenAddr() string {
 		return ""
 	}
 	return s.listener.Addr().String()
+}
+
+// HasHostConnection returns true if the swarm has a connection to the host address.
+func (s *Swarm) HasHostConnection() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.hostAddr == "" {
+		return false
+	}
+	for _, p := range s.peers {
+		if p.Addr == s.hostAddr {
+			return true
+		}
+	}
+	return false
+}
+
+// StartKeepaliveLoop broadcasts a MsgKeepalive message every 30s.
+// Blocks until the swarm is closed. Runs in its own goroutine.
+func (s *Swarm) StartKeepaliveLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.Broadcast(&protocol.KeepaliveMsg{})
+		case <-s.done:
+			return
+		}
+	}
 }
 
 // GetPeer returns a peer by ID.
