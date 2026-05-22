@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"io"
 	"math"
 	"testing"
 )
@@ -247,3 +248,37 @@ func sha256Hash(s string) [32]byte {
 	copy(h[:], []byte(s))
 	return h
 }
+
+func BenchmarkWriteMessage(b *testing.B) {
+	msg := &PieceMsg{
+		ChunkIndex: 42,
+		Data:       make([]byte, 524288), // 512KB
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		err := WriteMessage(io.Discard, msg)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWriteMessageSmall(b *testing.B) {
+	msg := &SyncMsg{
+		PlaybackTime: 123.456,
+		State:        StatePlaying,
+		UnixMs:       1715806000000,
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		err := WriteMessage(io.Discard, msg)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+

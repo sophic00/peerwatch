@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync"
 )
 
 // MaxMessageSize is the maximum allowed message size (16 MB).
@@ -13,52 +14,59 @@ import (
 // The largest expected message is a PIECE (512KB chunk + header ≈ 524KB).
 const MaxMessageSize = 16 * 1024 * 1024
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		// Pre-allocate a capacity large enough for a PieceMsg payload (512KB + headers)
+		return bytes.NewBuffer(make([]byte, 0, 524288))
+	},
+}
+
 // WriteMessage encodes and writes a framed message to w.
 // Format: [4-byte length][1-byte type][payload]
 func WriteMessage(w io.Writer, msg Message) error {
-	var payload bytes.Buffer
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
+	// Pre-allocate 5 bytes for the framed header: [4-byte length][1-byte type]
+	var headerDummy [5]byte
+	buf.Write(headerDummy[:])
 
 	switch m := msg.(type) {
 	case *HandshakeMsg:
-		encodeHandshake(&payload, m)
+		encodeHandshake(buf, m)
 	case *ManifestMsg:
-		encodeManifest(&payload, m)
+		encodeManifest(buf, m)
 	case *BitfieldMsg:
-		encodeBitfield(&payload, m)
+		encodeBitfield(buf, m)
 	case *HaveMsg:
-		encodeUint32Msg(&payload, m.ChunkIndex)
+		encodeUint32Msg(buf, m.ChunkIndex)
 	case *RequestMsg:
-		encodeRequest(&payload, m)
+		encodeRequest(buf, m)
 	case *PieceMsg:
-		encodePiece(&payload, m)
+		encodePiece(buf, m)
 	case *CancelMsg:
-		encodeUint32Msg(&payload, m.ChunkIndex)
+		encodeUint32Msg(buf, m.ChunkIndex)
 	case *SyncMsg:
-		encodeSync(&payload, m)
+		encodeSync(buf, m)
 	case *PeerListMsg:
-		encodePeerList(&payload, m)
+		encodePeerList(buf, m)
 	case *KeepaliveMsg:
 		// empty payload
 	default:
 		return fmt.Errorf("unknown message type: %T", msg)
 	}
 
-	// Write length prefix: type byte (1) + payload length
-	length := uint32(1 + payload.Len())
-	if err := binary.Write(w, binary.BigEndian, length); err != nil {
-		return fmt.Errorf("write length: %w", err)
-	}
+	data := buf.Bytes()
+	wireLength := uint32(len(data) - 4) // length = type byte (1) + payload length
 
-	// Write type byte
-	if _, err := w.Write([]byte{msg.Type()}); err != nil {
-		return fmt.Errorf("write type: %w", err)
-	}
+	// Write length prefix and type byte directly into pre-allocated header space
+	binary.BigEndian.PutUint32(data[0:4], wireLength)
+	data[4] = msg.Type()
 
-	// Write payload
-	if payload.Len() > 0 {
-		if _, err := w.Write(payload.Bytes()); err != nil {
-			return fmt.Errorf("write payload: %w", err)
-		}
+	// Write the entire coalesced packet in a single write call
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("write message: %w", err)
 	}
 
 	return nil
@@ -123,14 +131,19 @@ func encodeHandshake(buf *bytes.Buffer, m *HandshakeMsg) {
 }
 
 func encodeManifest(buf *bytes.Buffer, m *ManifestMsg) {
-	// filename: length-prefixed string
-	binary.Write(buf, binary.BigEndian, uint16(len(m.FileName)))
+	var tmp [20]byte
+	binary.BigEndian.PutUint16(tmp[0:2], uint16(len(m.FileName)))
+	buf.Write(tmp[0:2])
 	buf.WriteString(m.FileName)
-	binary.Write(buf, binary.BigEndian, m.FileSize)
-	binary.Write(buf, binary.BigEndian, m.ChunkSize)
-	binary.Write(buf, binary.BigEndian, m.ChunkCount)
+
+	binary.BigEndian.PutUint64(tmp[0:8], uint64(m.FileSize))
+	binary.BigEndian.PutUint64(tmp[8:16], uint64(m.ChunkSize))
+	binary.BigEndian.PutUint32(tmp[16:20], m.ChunkCount)
+	buf.Write(tmp[0:20])
+
 	for _, c := range m.Chunks {
-		binary.Write(buf, binary.BigEndian, c.Size)
+		binary.BigEndian.PutUint32(tmp[0:4], c.Size)
+		buf.Write(tmp[0:4])
 		buf.Write(c.Hash[:])
 	}
 }
@@ -140,24 +153,32 @@ func encodeBitfield(buf *bytes.Buffer, m *BitfieldMsg) {
 }
 
 func encodeUint32Msg(buf *bytes.Buffer, v uint32) {
-	binary.Write(buf, binary.BigEndian, v)
+	var tmp [4]byte
+	binary.BigEndian.PutUint32(tmp[:], v)
+	buf.Write(tmp[:])
 }
 
 func encodePiece(buf *bytes.Buffer, m *PieceMsg) {
-	binary.Write(buf, binary.BigEndian, m.ChunkIndex)
+	var tmp [4]byte
+	binary.BigEndian.PutUint32(tmp[:], m.ChunkIndex)
+	buf.Write(tmp[:])
 	buf.Write(m.Data)
 }
 
 func encodeSync(buf *bytes.Buffer, m *SyncMsg) {
-	binary.Write(buf, binary.BigEndian, math.Float64bits(m.PlaybackTime))
-	buf.WriteByte(m.State)
-	binary.Write(buf, binary.BigEndian, m.UnixMs)
+	var tmp [17]byte
+	binary.BigEndian.PutUint64(tmp[0:8], math.Float64bits(m.PlaybackTime))
+	tmp[8] = m.State
+	binary.BigEndian.PutUint64(tmp[9:17], uint64(m.UnixMs))
+	buf.Write(tmp[:])
 }
 
 func encodePeerList(buf *bytes.Buffer, m *PeerListMsg) {
-	binary.Write(buf, binary.BigEndian, uint32(len(m.Addrs)))
+	encodeUint32Msg(buf, uint32(len(m.Addrs)))
+	var tmp [2]byte
 	for _, addr := range m.Addrs {
-		binary.Write(buf, binary.BigEndian, uint16(len(addr)))
+		binary.BigEndian.PutUint16(tmp[:], uint16(len(addr)))
+		buf.Write(tmp[:])
 		buf.WriteString(addr)
 	}
 }
@@ -231,9 +252,9 @@ func decodeHave(data []byte) (*HaveMsg, error) {
 }
 
 func encodeRequest(buf *bytes.Buffer, m *RequestMsg) {
-	binary.Write(buf, binary.BigEndian, uint32(len(m.ChunkIndices)))
+	encodeUint32Msg(buf, uint32(len(m.ChunkIndices)))
 	for _, idx := range m.ChunkIndices {
-		binary.Write(buf, binary.BigEndian, idx)
+		encodeUint32Msg(buf, idx)
 	}
 }
 

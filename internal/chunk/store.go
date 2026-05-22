@@ -217,17 +217,21 @@ func (s *Store) WaitForChunk(index int) {
 	}
 
 	s.waitMu.Lock()
+	// Re-verify under waitMu lock (reading the bitfield safely under mu.RLock)
+	s.mu.RLock()
+	has := hasBit(s.bitfield, index)
+	s.mu.RUnlock()
+	if has {
+		s.waitMu.Unlock()
+		return
+	}
+
 	ch, ok := s.waiters[index]
 	if !ok {
 		ch = make(chan struct{})
 		s.waiters[index] = ch
 	}
 	s.waitMu.Unlock()
-
-	// Check again after registering (avoid race)
-	if s.HasChunk(index) {
-		return
-	}
 
 	<-ch
 }

@@ -154,3 +154,76 @@ func TestReleaseInFlight(t *testing.T) {
 		t.Error("chunk 6 should still be in-flight")
 	}
 }
+
+func TestSchedulerRequestTimeoutIntegration(t *testing.T) {
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "video.mp4")
+	data := make([]byte, 1024)
+	os.WriteFile(srcPath, data, 0644)
+	manifest, _ := chunk.BuildManifest(srcPath, 512)
+
+	hostStore, _ := chunk.NewHostStore(srcPath, manifest)
+	defer hostStore.Close()
+
+	hostSwarm := peer.NewSwarm(peer.GeneratePeerID(), hostStore, manifest, true)
+	defer hostSwarm.Close()
+	if err := hostSwarm.Listen("127.0.0.1:0"); err != nil {
+		t.Fatal(err)
+	}
+
+	peerSwarm := peer.NewSwarm(peer.GeneratePeerID(), nil, nil, false)
+	defer peerSwarm.Close()
+
+	_, err := peerSwarm.ConnectToHost(hostSwarm.ListenAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create peer store
+	peerStore, _ := chunk.NewPeerStore(manifest, dir)
+	defer peerStore.Close()
+	peerSwarm.SetStore(peerStore)
+
+	sched := New(peerStore, peerSwarm)
+	defer sched.Stop()
+
+	// Get the peer from peerSwarm (representing the host peer)
+	peers := peerSwarm.Peers()
+	if len(peers) == 0 {
+		t.Fatal("no peers connected to peerSwarm")
+	}
+	hostPeer := peers[0]
+
+	// Mark chunk 0 as in-flight
+	hostPeer.MarkInFlight(0)
+	sched.mu.Lock()
+	sched.inFlight[0] = struct{}{}
+	sched.mu.Unlock()
+
+	// Direct call to scheduler's tick() shouldn't timeout yet
+	sched.tick()
+
+	sched.mu.Lock()
+	_, inFlightBefore := sched.inFlight[0]
+	sched.mu.Unlock()
+	if !inFlightBefore {
+		t.Error("expected chunk 0 to still be in flight initially")
+	}
+
+	// Sleep to exceed requestTimeout (3s)
+	time.Sleep(3100 * time.Millisecond)
+
+	// Remove peer from tracker so chunk 0 cannot be rescheduled during this tick
+	peerSwarm.Tracker().RemovePeer(hostPeer.ID)
+
+	// Run tick() - it should detect the timeout and release the chunk!
+	sched.tick()
+
+	sched.mu.Lock()
+	_, inFlightAfter := sched.inFlight[0]
+	sched.mu.Unlock()
+	if inFlightAfter {
+		t.Error("expected chunk 0 to be timed out and removed from in-flight")
+	}
+}
+

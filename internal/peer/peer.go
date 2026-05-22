@@ -144,6 +144,28 @@ func (p *Peer) ClearInFlight(index uint32, size int) {
 	}
 }
 
+// TimeoutInFlight scans for in-flight requests that have exceeded the timeout.
+// Clears them from the peer's in-flight map, halves estimated speed as a penalty,
+// and returns their indices.
+func (p *Peer) TimeoutInFlight(timeout time.Duration) []uint32 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var timedOut []uint32
+	now := time.Now()
+	for idx, t := range p.inFlight {
+		if now.Sub(t) > timeout {
+			timedOut = append(timedOut, idx)
+			delete(p.inFlight, idx)
+			
+			// Penalty: temporarily halve the peer's estimated speed
+			// to discourage selecting this stalled/slow peer immediately.
+			p.speed = p.speed * 0.5
+		}
+	}
+	return timedOut
+}
+
 // InFlightCount returns the number of chunks currently requested from this peer.
 func (p *Peer) InFlightCount() int {
 	p.mu.RLock()

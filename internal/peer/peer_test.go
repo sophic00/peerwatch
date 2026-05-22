@@ -216,3 +216,40 @@ func TestPeerInFlightChunksAndDisconnect(t *testing.T) {
 		t.Errorf("expected only chunk 10 to be left in-flight, got %v", chunks)
 	}
 }
+
+func TestPeerTimeoutInFlight(t *testing.T) {
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+
+	p := NewPeer(c1)
+	p.speed = 1000.0 // set initial mock speed
+
+	// Mark a chunk as in-flight
+	p.MarkInFlight(5)
+	p.MarkInFlight(8)
+
+	// Artificially modify one of the request times to be in the past
+	p.mu.Lock()
+	p.inFlight[5] = time.Now().Add(-10 * time.Second)
+	p.mu.Unlock()
+
+	// Perform timeout scan with a 5-second threshold
+	timedOut := p.TimeoutInFlight(5 * time.Second)
+
+	if len(timedOut) != 1 || timedOut[0] != 5 {
+		t.Errorf("expected only chunk 5 to time out, got %v", timedOut)
+	}
+
+	// Verify speed penalty was applied (halved)
+	if p.Speed() != 500.0 {
+		t.Errorf("expected speed to be penalized to 500.0, got %f", p.Speed())
+	}
+
+	// Verify chunk 8 is still in-flight
+	chunks := p.InFlightChunks()
+	if len(chunks) != 1 || chunks[0] != 8 {
+		t.Errorf("expected chunk 8 to remain in-flight, got %v", chunks)
+	}
+}
+

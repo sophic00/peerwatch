@@ -186,3 +186,57 @@ func makeTestData(size int) []byte {
 	}
 	return data
 }
+
+func TestStoreWaitForChunkConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "video.mp4")
+	data := makeTestData(1500)
+	os.WriteFile(srcPath, data, 0644)
+
+	manifest, _ := BuildManifest(srcPath, 512)
+	store, _ := NewPeerStore(manifest, dir)
+	defer store.Close()
+
+	// Run multiple concurrent goroutines waiting for the same chunk,
+	// and multiple writing it to trigger races and potential leaks.
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			store.WaitForChunk(0)
+		}()
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Write chunk concurrently
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		store.WriteChunk(0, data[:512])
+	}()
+
+	// Wait with a timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for concurrent wait/write to complete")
+	}
+
+	// Verify s.waiters is completely empty after successful writes
+	store.waitMu.Lock()
+	l := len(store.waiters)
+	store.waitMu.Unlock()
+
+	if l != 0 {
+		t.Errorf("expected 0 waiters, got %d (leak occurred)", l)
+	}
+}
+

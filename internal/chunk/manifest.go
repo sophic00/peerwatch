@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -24,6 +26,13 @@ type Manifest struct {
 type ChunkMeta struct {
 	Size int64
 	Hash [32]byte // SHA-256 digest
+}
+
+type hashResult struct {
+	index int
+	size  int64
+	hash  [32]byte
+	err   error
 }
 
 // BuildManifest reads the file at filePath, splits it into chunks of chunkSize
@@ -51,24 +60,78 @@ func BuildManifest(filePath string, chunkSize int64) (*Manifest, error) {
 		Chunks:     make([]ChunkMeta, count),
 	}
 
+	numWorkers := runtime.NumCPU()
+	if numWorkers > count {
+		numWorkers = count
+	}
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+
+	jobs := make(chan int, numWorkers*2)
+	results := make(chan hashResult, numWorkers*2)
+
+	var wg sync.WaitGroup
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range jobs {
+				data, err := chunker.ReadChunk(idx)
+				if err != nil {
+					results <- hashResult{index: idx, err: err}
+					continue
+				}
+				results <- hashResult{
+					index: idx,
+					size:  int64(len(data)),
+					hash:  sha256.Sum256(data),
+				}
+			}
+		}()
+	}
+
+	// Feed jobs in background
+	go func() {
+		for i := 0; i < count; i++ {
+			jobs <- i
+		}
+		close(jobs)
+	}()
+
+	// Wait in background and close results once all workers finish (draining safety)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
 	start := time.Now()
-	for i := range count {
-		data, err := chunker.ReadChunk(i)
-		if err != nil {
-			return nil, fmt.Errorf("read chunk %d: %w", i, err)
+	var firstErr error
+
+	// Collect exactly 'count' results to guarantee no workers block on channel write
+	for i := 0; i < count; i++ {
+		res := <-results
+		if res.err != nil && firstErr == nil {
+			firstErr = res.err
 		}
 
-		m.Chunks[i] = ChunkMeta{
-			Size: int64(len(data)),
-			Hash: sha256.Sum256(data),
+		if firstErr == nil {
+			m.Chunks[res.index] = ChunkMeta{
+				Size: res.size,
+				Hash: res.hash,
+			}
 		}
 
-		// Log progress every 500 chunks
+		// Log progress
 		if (i+1)%500 == 0 || i == count-1 {
 			elapsed := time.Since(start)
 			log.Printf("  hashing: %d/%d chunks (%.1f%%) [%v]",
 				i+1, count, float64(i+1)/float64(count)*100, elapsed.Round(time.Millisecond))
 		}
+	}
+
+	if firstErr != nil {
+		return nil, fmt.Errorf("hashing failed: %w", firstErr)
 	}
 
 	return m, nil

@@ -20,6 +20,9 @@ import (
 // maxTotalInFlight is the maximum number of chunk requests in-flight globally.
 const maxTotalInFlight = 16
 
+// requestTimeout is the duration we wait before timing out a chunk request.
+const requestTimeout = 3 * time.Second
+
 // Scheduler manages the chunk download loop.
 type Scheduler struct {
 	mu       sync.Mutex
@@ -136,6 +139,19 @@ func (s *Scheduler) InFlightCount() int {
 
 // tick runs one scheduling cycle.
 func (s *Scheduler) tick() {
+	// Check for timed out chunk requests across all connected peers
+	var timedOutChunks []uint32
+	for _, p := range s.swarm.Peers() {
+		if timedOut := p.TimeoutInFlight(requestTimeout); len(timedOut) > 0 {
+			timedOutChunks = append(timedOutChunks, timedOut...)
+			log.Printf("scheduler: timed out %d in-flight chunk requests from peer %s", len(timedOut), peer.FormatPeerID(p.ID))
+		}
+	}
+
+	if len(timedOutChunks) > 0 {
+		s.ReleaseInFlight(timedOutChunks)
+	}
+
 	s.mu.Lock()
 	cursor := s.cursor
 	inFlightSnap := make(map[int]struct{}, len(s.inFlight))
