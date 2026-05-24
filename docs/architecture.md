@@ -8,7 +8,7 @@ BitTorrent-style, and play back in sync via mpv.
 ## How It Works (High Level)
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph Host["Host Node"]
         HF["Local Video File"] --> HC["Chunker & Manifest Builder"]
         HC --> HS["Host Chunk Store"]
@@ -79,20 +79,19 @@ flowchart LR
 Full mesh — every peer connects to every other peer directly.
 
 ```mermaid id="p2n4qx"
-graph TD
-    A["Host"]
-    B["Peer B"]
-    C["Peer C"]
-    D["Peer D"]
+flowchart LR
+    Host["Host"] <-->|"TCP"| B["Peer B"]
+    Host <-->|"TCP"| C["Peer C"]
+    Host <-->|"TCP"| D["Peer D"]
+    
+    B <-->|"TCP"| C
+    B <-->|"TCP"| D
+    C <-->|"TCP"| D
 
-    A <-->|TCP| B
-    A <-->|TCP| C
-    A <-->|TCP| D
-
-    B <-->|TCP| C
-    B <-->|TCP| D
-
-    C <-->|TCP| D
+    classDef hostStyle fill:#1e3a8a,stroke:#3b82f6,stroke-width:2px,color:#fff;
+    classDef peerStyle fill:#064e3b,stroke:#10b981,stroke-width:1px,color:#fff;
+    class Host hostStyle;
+    class B,C,D peerStyle;
 ```
 
 ```mermaid id="k7m1za"

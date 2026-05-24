@@ -10,26 +10,31 @@ When a new peer (B) connects to the host (A), the following sequence occurs
 
 ```mermaid
 sequenceDiagram
-    participant B as Peer B
-    participant A as Host A
+    autonumber
+    
+    participant B as Peer B (Joiner)
+    participant A as Host A (Room Host)
 
-    B->>A: TCP connect
-    note over A: accepts
+    rect rgba(30, 58, 138, 0.2)
+        note over B,A: Phase 1: Synchronous Handshake & Connection Setup
+        B->>A: TCP Connect
+        note over B,A: Host A accepts connection
+        B->>A: HANDSHAKE {peer_id: B, version: 1}
+        A->>B: HANDSHAKE {peer_id: A, version: 1}
+    end
 
-    B->>A: HANDSHAKE {peer_id: B, version: 1}
-    A->>B: HANDSHAKE {peer_id: A, version: 1}
+    rect rgba(124, 45, 18, 0.2)
+        note over B,A: Phase 2: Metadata & Swarm Discovery
+        A->>B: MANIFEST {filename, filesize, chunk_size, chunk_count, hashes}
+        A->>B: BITFIELD {1111...1} (Host has all chunks)
+        A->>B: PEER_LIST {["peer_C:port", "peer_D:port"]}
+    end
 
-    A->>B: MANIFEST<br/>{filename, filesize, chunk_size,<br/>chunk_count, [{hash, size}…]}
-
-    A->>B: BITFIELD {1111…1}
-    note over A: has all chunks
-
-    A->>B: PEER_LIST {["peer_C:port", "peer_D:port"]}
-
-    note over B,A: read / write goroutines start
-
-    B->>A: BITFIELD {0000…0}
-    note over B: has no chunks yet
+    rect rgba(6, 78, 59, 0.2)
+        note over B,A: Phase 3: Start Duplex Communication Loops
+        note over B,A: Duplex read/write loops started asynchronously
+        B->>A: BITFIELD {0000...0} (Joiner has no chunks yet)
+    end
 ```
 
 **Order matters.** The host sends HANDSHAKE → MANIFEST → BITFIELD → PEER_LIST
@@ -44,21 +49,23 @@ peer. This is a **non-host** handshake — no manifest is sent:
 
 ```mermaid
 sequenceDiagram
+    autonumber
     participant B as Peer B
     participant C as Peer C
 
-    B->>C: TCP connect
+    rect rgba(30, 58, 138, 0.2)
+        note over B,C: Phase 1: TCP Dial & Non-Host Handshake
+        B->>C: TCP Connect
+        B->>C: HANDSHAKE {peer_id: B, version: 1}
+        C->>B: HANDSHAKE {peer_id: C, version: 1}
+    end
 
-    B->>C: HANDSHAKE {peer_id: B, version: 1}
-    C->>B: HANDSHAKE {peer_id: C, version: 1}
-
-    note over B,C: read / write goroutines start
-
-    C->>B: BITFIELD {1100110…0}
-    note over C: has some chunks
-
-    B->>C: BITFIELD {0000000…0}
-    note over B: has no chunks yet
+    rect rgba(6, 78, 59, 0.2)
+        note over B,C: Phase 2: Duplex Loops & Bitfield Exchange
+        note over B,C: Duplex read/write loops started
+        C->>B: BITFIELD {1100110...0} (Peer C has partial chunks)
+        B->>C: BITFIELD {0000000...0} (Peer B has no chunks yet)
+    end
 ```
 
 Peer B already has the manifest from the host. Only bitfields are exchanged.
@@ -69,15 +76,23 @@ Once connected, chunks are requested and transferred asynchronously:
 
 ```mermaid
 sequenceDiagram
-    participant B as Peer B
-    participant A as Host A
+    autonumber
+    participant B as Peer B (Downloader)
+    participant A as Host A (Uploader)
 
-    B->>A: REQUEST {chunks: [0, 1, 2, 3]}
+    rect rgba(30, 58, 138, 0.2)
+        note over B,A: Phase 1: Batched Chunk Scheduling
+        B->>A: REQUEST {chunk_indices: [0, 1, 2, 3]} (Batch request from Scheduler)
+    end
 
-    A->>B: PIECE {chunk: 0, data: 512KB}
-    A->>B: PIECE {chunk: 1, data: 512KB}
-    A->>B: PIECE {chunk: 2, data: 512KB}
-    A->>B: PIECE {chunk: 3, data: 512KB}
+    rect rgba(6, 78, 59, 0.2)
+        note over B,A: Phase 2: Asynchronous Multi-Piece Dispatch
+        A->>B: PIECE {chunk: 0, data: 512KB}
+        A->>B: PIECE {chunk: 1, data: 512KB}
+        A->>B: PIECE {chunk: 2, data: 512KB}
+        A->>B: PIECE {chunk: 3, data: 512KB}
+        note over B,A: Chunks verified on downloader via SHA-256 hashes
+    end
 ```
 
 - REQUEST is **batched** — multiple chunk indices in one message
@@ -90,15 +105,18 @@ Every ~1 second, each peer sends its current bitfield to ALL connected peers:
 
 ```mermaid
 sequenceDiagram
-    participant B as Peer B
+    autonumber
+    participant B as Peer B (Broadcast)
     participant A as Host A
     participant C as Peer C
     participant D as Peer D
 
-    loop every 1 second
-        B->>A: BITFIELD {0011110…0}
-        B->>C: BITFIELD {0011110…0}
-        B->>D: BITFIELD {0011110…0}
+    rect rgba(6, 78, 59, 0.2)
+        loop Every ~1 Second (Self-Correcting State Sync)
+            B->>A: BITFIELD {0011110...0}
+            B->>C: BITFIELD {0011110...0}
+            B->>D: BITFIELD {0011110...0}
+        end
     end
 ```
 
@@ -114,8 +132,20 @@ The receiving peer updates:
 
 Every 2 seconds, the host broadcasts its playback position:
 
-```
-Host A ──── SYNC {time: 45.2, state: PLAYING, unix_ms: ...} ──→ ALL peers
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Host A
+    participant B as Peer B
+    participant C as Peer C
+
+    rect rgba(30, 58, 138, 0.2)
+        loop Every 2 Seconds (Active Coordinated Drift Control)
+            A->>B: SYNC {time: 45.2, state: PLAYING, unix_ms: ...}
+            A->>C: SYNC {time: 45.2, state: PLAYING, unix_ms: ...}
+            note over B,C: Peers compare position & adjust speed (0.95x - 1.05x) or seek
+        end
+    end
 ```
 
 Peers compare their position and adjust:
