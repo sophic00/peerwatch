@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 )
 
@@ -25,14 +26,47 @@ type Token struct {
 	ChunkCount int    `json:"c"` // Total number of chunks
 }
 
-// Encode serializes the token to a prefixed base64url string.
-func (t *Token) Encode() string {
-	data, _ := json.Marshal(t)
-	return prefix + base64.RawURLEncoding.EncodeToString(data)
+// validate checks that all required Token fields are present and well-formed.
+func (t *Token) validate() error {
+	if t.Host == "" {
+		return fmt.Errorf("token missing host address")
+	}
+	if _, _, err := net.SplitHostPort(t.Host); err != nil {
+		return fmt.Errorf("token host %q is not a valid host:port: %w", t.Host, err)
+	}
+	if t.RoomID == "" {
+		return fmt.Errorf("token missing room ID")
+	}
+	if t.FileName == "" {
+		return fmt.Errorf("token missing file name")
+	}
+	if t.FileSize <= 0 {
+		return fmt.Errorf("token has invalid file size %d", t.FileSize)
+	}
+	if t.ChunkCount <= 0 {
+		return fmt.Errorf("token has invalid chunk count %d", t.ChunkCount)
+	}
+	return nil
+}
+
+// Encode validates the token and serializes it to a prefixed base64url string.
+func (t *Token) Encode() (string, error) {
+	if err := t.validate(); err != nil {
+		return "", err
+	}
+
+	data, err := json.Marshal(t)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode token: %w", err)
+	}
+	return prefix + base64.RawURLEncoding.EncodeToString(data), nil
 }
 
 // Decode parses a token string (with or without the "pw_" prefix).
 func Decode(s string) (*Token, error) {
+	if s == "" {
+		return nil, fmt.Errorf("token is empty")
+	}
 	s = strings.TrimPrefix(s, prefix)
 
 	data, err := base64.RawURLEncoding.DecodeString(s)
@@ -45,11 +79,8 @@ func Decode(s string) (*Token, error) {
 		return nil, fmt.Errorf("invalid token data: %w", err)
 	}
 
-	if t.Host == "" {
-		return nil, fmt.Errorf("token missing host address")
-	}
-	if t.FileName == "" {
-		return nil, fmt.Errorf("token missing file name")
+	if err := t.validate(); err != nil {
+		return nil, err
 	}
 
 	return &t, nil

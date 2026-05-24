@@ -13,7 +13,10 @@ func TestTokenRoundtrip(t *testing.T) {
 		ChunkCount: 1400,
 	}
 
-	encoded := orig.Encode()
+	encoded, err := orig.Encode()
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
 
 	// Should have pw_ prefix
 	if encoded[:3] != "pw_" {
@@ -44,7 +47,10 @@ func TestTokenRoundtrip(t *testing.T) {
 
 func TestTokenDecodeWithoutPrefix(t *testing.T) {
 	orig := &Token{Host: "10.0.0.1:8080", RoomID: "test", FileName: "a.mkv", FileSize: 100, ChunkCount: 1}
-	encoded := orig.Encode()
+	encoded, err := orig.Encode()
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
 
 	// Strip prefix and decode
 	stripped := encoded[3:]
@@ -62,14 +68,40 @@ func TestTokenDecodeInvalid(t *testing.T) {
 		name  string
 		input string
 	}{
+		{"empty string", ""},
 		{"garbage", "not-valid-base64!!!"},
-		{"empty json", "pw_e30"},              // {} — missing host
+		{"empty json", "pw_e30"},                           // {} — missing host
 		{"no filename", "pw_eyJoIjoiMTAuMC4wLjE6ODA4MCJ9"}, // {"h":"10.0.0.1:8080"} — missing filename
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Decode(tc.input)
+			if err == nil {
+				t.Error("expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestTokenEncodeInvalid(t *testing.T) {
+	cases := []struct {
+		name  string
+		token Token
+	}{
+		{"missing host", Token{RoomID: "r", FileName: "f", FileSize: 1, ChunkCount: 1}},
+		{"bad host format", Token{Host: "192.168.1.1", RoomID: "r", FileName: "f", FileSize: 1, ChunkCount: 1}},
+		{"missing room ID", Token{Host: "1.2.3.4:9000", FileName: "f", FileSize: 1, ChunkCount: 1}},
+		{"missing file name", Token{Host: "1.2.3.4:9000", RoomID: "r", FileSize: 1, ChunkCount: 1}},
+		{"zero file size", Token{Host: "1.2.3.4:9000", RoomID: "r", FileName: "f", ChunkCount: 1}},
+		{"negative file size", Token{Host: "1.2.3.4:9000", RoomID: "r", FileName: "f", FileSize: -1, ChunkCount: 1}},
+		{"zero chunk count", Token{Host: "1.2.3.4:9000", RoomID: "r", FileName: "f", FileSize: 1}},
+		{"negative chunk count", Token{Host: "1.2.3.4:9000", RoomID: "r", FileName: "f", FileSize: 1, ChunkCount: -1}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.token.Encode()
 			if err == nil {
 				t.Error("expected error, got nil")
 			}

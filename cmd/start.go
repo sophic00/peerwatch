@@ -103,7 +103,10 @@ func Start(args []string) {
 		ChunkCount: manifest.ChunkCount,
 	}
 
-	encoded := tok.Encode()
+	encoded, err := tok.Encode()
+	if err != nil {
+		log.Fatalf("failed to build connection token: %v", err)
+	}
 	fmt.Println()
 	fmt.Println("room created! share this token with your friends:")
 	fmt.Printf("\n  %s\n\n", encoded)
