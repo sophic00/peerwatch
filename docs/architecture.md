@@ -8,14 +8,46 @@ BitTorrent-style, and play back in sync via mpv.
 ## How It Works (High Level)
 
 ```mermaid
-graph TD
-    A["Host<br/>video.mp4<br/>all chunks ✓<br/>mpv playing"]
-    B["Peer B<br/>.partial file<br/>downloading…<br/>mpv playing"]
-    C["Peer C<br/>.partial<br/>downloading"]
+flowchart LR
+    subgraph Host["Host Node"]
+        HF["Local Video File"] --> HC["Chunker & Manifest Builder"]
+        HC --> HS["Host Chunk Store"]
+        HS --> HHTTP["Local HTTP Server"]
+        HHTTP -->|Range Requests| Hmpv["mpv Player (Active)"]
+        HSync["Sync Manager"] -->|Broadcasting State & Time| HSwarm["Host TCP Swarm"]
+        
+        HS -->|Read Chunks| HSwarm
+        Hmpv -->|Query Position| HSync
+    end
 
-    A <-->|TCP mesh| B
-    A <-->|TCP mesh| C
-    B <-->|TCP mesh| C
+    subgraph Connection["Network Channel"]
+        Proto["TCP Wire Protocol<br/>• HANDSHAKE<br/>• MANIFEST<br/>• BITFIELD<br/>• REQUEST<br/>• PIECE<br/>• SYNC<br/>• PEER_LIST<br/>• KEEPALIVE"]
+    end
+
+    subgraph Peer["Peer Node"]
+        PSwarm["Peer TCP Swarm"] -->|Receives Chunks| PStore["Peer Sparse Store"]
+        PStore -->|Feeds Data| PHTTP["Local HTTP Server"]
+        PHTTP -->|Range Requests| Pmpv["mpv Player (Active)"]
+        PHTTP -->|Urgent Demand| PSched["Download Scheduler"]
+        PTracker["Availability Tracker"] -->|Rarest-first Prioritization| PSched
+        PSched -->|Batch Requests| PSwarm
+        PStore -->|Bitfield Updates| PSwarm
+    end
+
+    HSwarm <--> Connection
+    Connection <--> PSwarm
+
+    classDef hostStyle fill:#1e3a8a,stroke:#3b82f6,stroke-width:1px,color:#fff;
+    classDef peerStyle fill:#064e3b,stroke:#10b981,stroke-width:1px,color:#fff;
+    classDef connStyle fill:#334155,stroke:#94a3b8,stroke-width:1px,color:#fff;
+    classDef playerStyle fill:#701a75,stroke:#d946ef,stroke-width:1px,color:#fff;
+    classDef httpStyle fill:#7c2d12,stroke:#f97316,stroke-width:1px,color:#fff;
+    
+    class Host,HF,HC,HS,HSwarm,HSync hostStyle;
+    class Peer,Pmpv,PHTTP,PSched,PTracker,PSwarm,PStore peerStyle;
+    class Connection,Proto connStyle;
+    class Hmpv,Pmpv playerStyle;
+    class HHTTP,PHTTP httpStyle;
 ```
 
 1. **Host** runs `./peerwatch start movie.mp4`
