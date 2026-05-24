@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build Binaries
+        run: |
+          set -euo pipefail
+
+          targets=(
+            "linux/386"
+            "linux/amd64"
+            "linux/arm"
+            "linux/arm64"
+            "linux/riscv64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/386"
+            "windows/amd64"
+            "windows/arm64"
+          )
+
+          mkdir -p dist
+
+          for target in "${targets[@]}"; do
+            os="${target%/*}"
+            arch="${target#*/}"
+
+            friendly_arch="${arch}"
+            if [ "${arch}" = "386" ]; then
+              friendly_arch="x86"
+            elif [ "${arch}" = "amd64" ]; then
+              friendly_arch="x86_64"
+            elif [ "${arch}" = "arm" ]; then
+              friendly_arch="armv7"
+            elif [ "${arch}" = "arm64" ]; then
+              friendly_arch="aarch64"
+            fi
+
+            ext=""
+            if [ "${os}" = "windows" ]; then
+              ext=".exe"
+            fi
+
+            if [ "${arch}" = "arm" ]; then
+              export GOARM=7
+            else
+              unset GOARM
+            fi
+
+            name="peerwatch-${os}-${friendly_arch}${ext}"
+
+            echo "Building ${name} for ${os}/${arch}..."
+            GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 \
+              go build -trimpath -ldflags="-s -w" -o "dist/${name}" .
+          done
+
+      - name: Generate Checksums
+        working-directory: dist
+        run: |
+          sha256sum peerwatch-* > checksums.txt
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          gh release create "${tag}" \
+            --title "${tag}" \
+            --generate-notes \
+            dist/*
