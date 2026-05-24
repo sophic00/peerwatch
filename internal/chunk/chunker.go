@@ -55,12 +55,10 @@ func (c *Chunker) ChunkSizeAt(index int) (int64, error) {
 		return 0, fmt.Errorf("chunk index %d out of range [0, %d)", index, c.ChunkCount())
 	}
 
-	offset := int64(index) * c.chunkSize
-	size := c.chunkSize
-	if offset+size > c.fileSize {
-		size = c.fileSize - offset
+	if index != c.ChunkCount()-1 {
+		return c.chunkSize, nil
 	}
-	return size, nil
+	return c.fileSize - int64(index)*c.chunkSize, nil
 }
 
 // ReadChunk reads the chunk at the given index.
