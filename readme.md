@@ -126,6 +126,11 @@ peerwatch/
 - **Linux** (other platforms untested)
 - **mpv** (for synchronized video playback)
 
+## Contributing
+
+Contributions are welcome! Please read the [Contributing Guidelines](CONTRIBUTING.md) to learn about our development workflow and commit message format.
+
 ## License
 
 See [LICENSE](LICENSE).
+
