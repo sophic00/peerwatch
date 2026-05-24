@@ -2,15 +2,22 @@
 
 Serverless peer-to-peer video watch party. One person hosts a video file, others join with a token. No central server — peers transfer chunks directly to each other, BitTorrent-style, and play back in sync via [mpv](https://mpv.io/).
 
-```
-Host                               Peers
-┌──────────────┐                   ┌──────────────┐
-│ ./peerwatch  │  ← TCP mesh →     │ ./peerwatch  │
-│ start mov.mp4│                   │ join <token> │
-│              │                   │              │
-│ has all      │                   │ downloads    │
-│ chunks ✓     │                   │ chunks...    │
-└──────────────┘                   └──────────────┘
+```mermaid
+flowchart LR
+    Host["Host<br/><code>./peerwatch start movie.mp4</code><br/>✓ Has all chunks<br/>✓ Serves video & sync"]
+    
+    PeerB["Peer B<br/><code>./peerwatch join &lt;token&gt;</code><br/>• Downloads & uploads<br/>• Plays back in sync"]
+    
+    PeerC["Peer C<br/><code>./peerwatch join &lt;token&gt;</code><br/>• Downloads & uploads<br/>• Plays back in sync"]
+
+    Host <-->|"TCP Full Mesh"| PeerB
+    Host <-->|"TCP Full Mesh"| PeerC
+    PeerB <-->|"TCP Full Mesh"| PeerC
+
+    classDef hostClass fill:#1e3a8a,stroke:#3b82f6,stroke-width:2px,color:#fff;
+    classDef peerClass fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff;
+    class Host hostClass;
+    class PeerB,PeerC peerClass;
 ```
 
 ## Features
