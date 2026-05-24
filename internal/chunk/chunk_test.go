@@ -41,29 +41,36 @@ func TestChunkerBasic(t *testing.T) {
 	}
 
 	// Read each chunk and verify sizes
-	chunk0, err := c.ReadChunk(0)
+	buf := make([]byte, 512)
+	n0, err := c.ReadChunk(0, buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(chunk0) != 512 {
-		t.Errorf("chunk 0 size: got %d, want 512", len(chunk0))
+	if n0 != 512 {
+		t.Errorf("chunk 0 size: got %d, want 512", n0)
 	}
+	chunk0 := make([]byte, n0)
+	copy(chunk0, buf[:n0])
 
-	chunk1, err := c.ReadChunk(1)
+	n1, err := c.ReadChunk(1, buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(chunk1) != 512 {
-		t.Errorf("chunk 1 size: got %d, want 512", len(chunk1))
+	if n1 != 512 {
+		t.Errorf("chunk 1 size: got %d, want 512", n1)
 	}
+	chunk1 := make([]byte, n1)
+	copy(chunk1, buf[:n1])
 
-	chunk2, err := c.ReadChunk(2)
+	n2, err := c.ReadChunk(2, buf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(chunk2) != 476 {
-		t.Errorf("chunk 2 (last) size: got %d, want 476", len(chunk2))
+	if n2 != 476 {
+		t.Errorf("chunk 2 (last) size: got %d, want 476", n2)
 	}
+	chunk2 := make([]byte, n2)
+	copy(chunk2, buf[:n2])
 
 	// Verify content matches original data
 	reassembled := append(append(chunk0, chunk1...), chunk2...)
@@ -91,10 +98,11 @@ func TestChunkerExactMultiple(t *testing.T) {
 	}
 
 	// Both chunks should be exactly 512 bytes
+	buf := make([]byte, 512)
 	for i := 0; i < 2; i++ {
-		chunk, _ := c.ReadChunk(i)
-		if len(chunk) != 512 {
-			t.Errorf("chunk %d size: got %d, want 512", i, len(chunk))
+		n, _ := c.ReadChunk(i, buf)
+		if n != 512 {
+			t.Errorf("chunk %d size: got %d, want 512", i, n)
 		}
 	}
 }
@@ -109,10 +117,11 @@ func TestChunkerOutOfRange(t *testing.T) {
 
 	c, _ := NewChunker(file, 512)
 
-	if _, err := c.ReadChunk(-1); err == nil {
+	buf := make([]byte, 512)
+	if _, err := c.ReadChunk(-1, buf); err == nil {
 		t.Error("expected error for negative index")
 	}
-	if _, err := c.ReadChunk(1); err == nil {
+	if _, err := c.ReadChunk(1, buf); err == nil {
 		t.Error("expected error for index >= ChunkCount")
 	}
 }

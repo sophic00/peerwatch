@@ -61,23 +61,25 @@ func (c *Chunker) ChunkSizeAt(index int) (int64, error) {
 	return c.fileSize - int64(index)*c.chunkSize, nil
 }
 
-// ReadChunk reads the chunk at the given index.
-// Returns the chunk data (which may be shorter than chunkSize for the last chunk).
-func (c *Chunker) ReadChunk(index int) ([]byte, error) {
+// ReadChunk reads the chunk at the given index into the provided buffer.
+// The buffer must be large enough to hold the chunk (at least ChunkSizeAt(index) bytes).
+// Returns the number of bytes read.
+func (c *Chunker) ReadChunk(index int, buf []byte) (int, error) {
 	size, err := c.ChunkSizeAt(index)
 	if err != nil {
-		return nil, err
+		return 0, err
+	}
+	if int64(len(buf)) < size {
+		return 0, fmt.Errorf("buffer too small: got %d, want %d", len(buf), size)
 	}
 
-	offset := int64(index) * c.ConfiguredChunkSize()
-	buf := make([]byte, size)
-	n, err := c.file.ReadAt(buf, offset)
+	offset := int64(index) * c.chunkSize
+	n, err := c.file.ReadAt(buf[:size], offset)
 	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("read chunk %d at offset %d: %w", index, offset, err)
+		return 0, fmt.Errorf("read chunk %d at offset %d: %w", index, offset, err)
 	}
-	return buf[:n], nil
+	return n, nil
 }
-
 // FileSize returns the total file size in bytes.
 func (c *Chunker) FileSize() int64 {
 	return c.fileSize

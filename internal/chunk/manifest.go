@@ -1,5 +1,4 @@
 package chunk
-
 import (
 	"crypto/sha256"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"sync"
 	"time"
 )
-
 // Manifest is the table of contents for a shared video file.
 // It contains per-chunk metadata (size and SHA-256 hash) that peers
 // use to verify chunk integrity after download.
@@ -60,40 +58,31 @@ func BuildManifest(filePath string, chunkSize int64) (*Manifest, error) {
 		Chunks:     make([]ChunkMeta, count),
 	}
 
-	numWorkers := runtime.NumCPU()
-	if numWorkers > count {
-		numWorkers = count
-	}
-	if numWorkers < 1 {
-		numWorkers = 1
-	}
-
+	numWorkers := max(min(runtime.NumCPU(), count), 1)
 	jobs := make(chan int, numWorkers*2)
 	results := make(chan hashResult, numWorkers*2)
-
 	var wg sync.WaitGroup
-	for w := 0; w < numWorkers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numWorkers {
+		wg.Go(func() {
+			buf := make([]byte, chunkSize)
 			for idx := range jobs {
-				data, err := chunker.ReadChunk(idx)
+				n, err := chunker.ReadChunk(idx, buf)
 				if err != nil {
 					results <- hashResult{index: idx, err: err}
 					continue
 				}
+
 				results <- hashResult{
 					index: idx,
-					size:  int64(len(data)),
-					hash:  sha256.Sum256(data),
+					size:  int64(n),
+					hash:  sha256.Sum256(buf[:n]),
 				}
 			}
-		}()
+		})
 	}
-
 	// Feed jobs in background
 	go func() {
-		for i := 0; i < count; i++ {
+		for i := range count {
 			jobs <- i
 		}
 		close(jobs)
@@ -109,7 +98,7 @@ func BuildManifest(filePath string, chunkSize int64) (*Manifest, error) {
 	var firstErr error
 
 	// Collect exactly 'count' results to guarantee no workers block on channel write
-	for i := 0; i < count; i++ {
+	for i := range count {
 		res := <-results
 		if res.err != nil && firstErr == nil {
 			firstErr = res.err
