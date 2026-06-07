@@ -55,3 +55,56 @@ leaks and dual-direction message processing.
 
 Fixes #28
 ```
+
+## Development and Testing Guidelines
+
+To ensure the P2P swarm logic and chunk scheduler remain robust and correct, follow these guidelines when writing and testing code.
+
+### Code Style and Formatting
+- Format all Go code using `go fmt`:
+  ```bash
+  go fmt ./...
+  ```
+- Run static analysis checks:
+  ```bash
+  go vet ./...
+  ```
+
+### Running the Test Suite
+- Run all package tests locally:
+  ```bash
+  go test ./... -v
+  ```
+- To detect concurrency bugs or data races in goroutines, always run tests with the race detector enabled:
+  ```bash
+  go test -race ./... -v
+  ```
+
+### Local P2P Swarm Manual Testing
+Since PeerWatch is a peer-to-peer system, verify your changes behave correctly under actual mesh network conditions by running a local multi-peer test swarm:
+
+1. **Build the CLI binary:**
+   ```bash
+   go build -o peerwatch .
+   ```
+
+2. **Start the Host Node** in a terminal window, specifying a sample video file:
+   ```bash
+   ./peerwatch start movie.mp4
+   ```
+   *Note: This will print a base64-encoded token to the console.*
+
+3. **Join as Peer Nodes** in separate terminal windows, specifying distinct output directories to prevent files overwriting each other:
+   ```bash
+   # In terminal 2:
+   ./peerwatch join -out ./peer2_data "<token>"
+
+   # In terminal 3:
+   ./peerwatch join -out ./peer3_data "<token>"
+   ```
+
+4. **Verify Swarm Behavior:**
+   - Check that peers successfully build a full mesh (all connect to each other).
+   - Verify that chunks are transferred and verified correctly.
+   - Verify that playback in `mpv` remains synchronized across nodes.
+
