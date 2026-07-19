@@ -1,31 +1,26 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-peerwatch
-main
+# Rust (Cargo.lock IS committed — application workspace, not a library)
+/target
+**/*.rs.bk
 
-# Test binary, built with `go test -c`
-*.test
+# Node / web UI
+node_modules/
+web/dist/
+web/node_modules/
 
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
+# Tauri
+crates/pw-app/target
+crates/pw-app/gen/schemas
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# WASM
+**/pkg/
 
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
+# env / secrets
 .env
+*.key
 
 # Editor/IDE
 .zed/
 .antigravitycli/
+
+# OS
+.DS_Store
