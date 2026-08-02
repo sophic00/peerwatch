@@ -68,7 +68,7 @@ Envelope {
 
 | # | Type | Sig | Payload | When |
 |---|------|-----|---------|------|
-| 0x20 | `BITFIELD` | — | `{ content_id, bits: bytes }` | control, every 1 s to every peer |
+| 0x20 | `BITFIELD` | — | `{ content_id, bits: bytes }` | control, every 1 s to every peer (serialized Roaring Bitmap, [roaring-compression.md](roaring-compression.md)) |
 | 0x21 | `REQUEST` | — | `{ content_id, want: [{piece, block_mask}…] }` | data, batched, ≤ 64 entries |
 | 0x22 | `PIECE` | — | `{ content_id, piece, block, bytes: 64 KiB }` | data, one block per message (type name kept from v1) |
 | 0x23 | `CANCEL` | — | `{ content_id, want: [{piece, block_mask}…] }` | data, kills *queued* (not in-flight) requests ([distribution.md](distribution.md) §4.5) |

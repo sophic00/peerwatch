@@ -95,13 +95,15 @@ browser-compatible", and the reason remux-when-possible matters.
 
 | Flow | Rate | Size | Total |
 |------|-----:|-----:|------:|
-| BITFIELD | 1/s/peer | 1.5 KB | ~24 KB/s room-wide |
+| BITFIELD | 1/s/peer | ~0.3–0.5 KB (Roaring, [roaring-compression.md](roaring-compression.md)) | ~5 KB/s room-wide (was ~24 KB/s raw) |
 | SYNC | 1/s (host) | ~60 B | ~1 KB/s |
 | PING/PONG | 0.2/s/conn | ~40 B | ~2 KB/s |
 | Votes/proposals | rare | ~200 B | noise |
 
-**Conclusion: control traffic is three orders of magnitude below the data
-plane (Mbps). Never optimize control messages at the expense of clarity.**
+**Conclusion: control traffic is still three orders of magnitude below the data
+plane (Mbps). The bitfield is the one control message worth compressing
+(Roaring, [roaring-compression.md](roaring-compression.md)); the rest stay
+uncompressed for clarity.**
 
 ## 7. Seek cost accounting
 

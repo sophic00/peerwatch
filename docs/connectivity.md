@@ -267,9 +267,9 @@ Points of note:
 Per-connection costs that bound room size:
 
 - DTLS-SCTP stack: tens of KB of state, ~1 timer wheel each, negligible at 16 peers.
-- Control traffic: bitfield broadcast every 1 s, `piece_count/8` bytes per
-  peer per second. A 6 GB video = 12 288 pieces = 1.5 KB bitfield →
-  ~24 KB/s total at 16 peers. Trivial.
+- Control traffic: bitfield broadcast every 1 s, Roaring-compressed
+  ([roaring-compression.md](roaring-compression.md)); ~0.3–0.5 KB/peer, a few
+  KB/s room-wide at 16 peers (was ~24 KB/s raw). Trivial.
 - Data traffic: dominated by the video bitrate, **not** the mesh degree.
   Each peer downloads the stream once (≈ video bitrate) and uploads at a
   rate the scheduler caps by policy (default ≈ 1.5× video bitrate to keep

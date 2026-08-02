@@ -57,16 +57,17 @@ content_id = blake3(serialize(manifest))
 
 ---
 
-## 3. Advertising: periodic full bitfields
+## 3. Advertising: periodic full bitfields with Roaring Compression
 
 Every peer broadcasts its **entire piece bitfield** on the control channel
 every ~1 second (same philosophy as v1: self-correcting, a lost update is
 repaired by the next broadcast, no per-piece HAVE chatter).
 
-- Size: `N/8` bytes, 1.5 KB for a 6 GB video. At 16 peers ≈ 24 KB/s room-wide. Trivial.
+To minimize bandwidth, bitfields are compressed using **Roaring Bitmaps** ([roaring-compression.md](roaring-compression.md)):
+
+- **Uncompressed vs Compressed Size**: a raw bitfield for a 6 GB video (12,288 pieces) is `N/8` = 1.5 KB. Under Roaring (run-optimized), a complete host/seeder compresses to ~15 B (99.0% reduction), a fresh joiner to ~8 B, and a browser sliding-window peer (contiguous window + scattered rare-reserve) to ~470 B. Full sizing and the run-optimization requirement are in [roaring-compression.md](roaring-compression.md).
 - Receivers update (a) the sender's bitfield (for "who has piece i?") and
-  (b) the **availability table**: `availability[i] = # of peers holding piece i`
-  — the input to rarest-first.
+  (b) the **availability table**: `availability[i] = # of peers holding piece i` (the input to rarest-first).
 - During a live transcode the Host's bitfield grows in real time, everyone
   sees the frontier advance.
 

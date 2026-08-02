@@ -50,6 +50,7 @@ you only care about one subsystem.
 | 11 | [frontends.md](frontends.md) | Per-platform specifics: CLI (mpv), desktop (Tauri + MSE + fallback), browser (MSE), and how they interoperate. |
 | 12 | [performance.md](performance.md) | The quantitative model: transfer-time formulas, scenario tables, CPU and memory budgets, cold-start latency. |
 | 13 | [roadmap.md](roadmap.md) | Implementation phases (M1–M5) and the decision log recording *why* the design is the way it is. |
+| 14 | [roaring-compression.md](roaring-compression.md) | The on-wire encoding of `BITFIELD` availability messages: the Portable Roaring Bitmap format, sizing, and validation rules. |
 
 ## Invariants every document must respect
 
