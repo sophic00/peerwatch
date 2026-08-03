@@ -1,0 +1,9 @@
+[package]
+name = "pw-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch core protocol logic — envelope/manifest types, piece store, scheduler, sync controller, governance, identity/crypto. Zero I/O; targets native and wasm32."
+
+[dependencies]

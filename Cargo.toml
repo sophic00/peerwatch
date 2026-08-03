@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "crates/pw-core",
+    "crates/pw-transport",
+    "crates/pw-media",
+    "crates/pw-player",
+    "crates/pw-signal",
+    "crates/pw-cli",
+    "crates/pw-app",
+]
+resolver = "2"
+
+# Shared package metadata inherited by every member crate.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Vaibhav Sijaria"]
+license = "MIT"
+# repository = "..."   # fill in once a public remote exists
+
+# [workspace.dependencies]
+# Shared dependency versions will be declared here as crates are implemented.

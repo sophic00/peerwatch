@@ -1,0 +1,9 @@
+[package]
+name = "pw-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch desktop shell — Tauri 2 app for Linux."
+
+[dependencies]

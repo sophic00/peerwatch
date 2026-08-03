@@ -1,0 +1,9 @@
+[package]
+name = "pw-player"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch Player trait and mpv adapter (JSON-RPC IPC + localhost range server)."
+
+[dependencies]

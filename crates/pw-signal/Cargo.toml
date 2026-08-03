@@ -1,0 +1,9 @@
+[package]
+name = "pw-signal"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch signaling client and self-hostable relay server (axum WebSocket)."
+
+[dependencies]
