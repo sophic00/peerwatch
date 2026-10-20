@@ -1,0 +1,49 @@
+name: docs
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'scripts/**'
+      - 'README.md'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    name: docs lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # No dependencies on purpose: the lint must be runnable on a bare
+      # runner and locally without a virtualenv.
+      - name: Invariants, links, orphans, tiers, section refs
+        run: python3 scripts/lint_invariants.py
+
+      - name: Message catalog is current
+        run: python3 scripts/gen_catalog.py --check
+
+      - name: Explain the fix on failure
+        if: failure()
+        run: |
+          cat <<'EOF'
+          Documentation checks failed.
+
+            * "catalog is STALE"      -> python3 scripts/gen_catalog.py
+                                         (never hand-edit the §7 tables)
+            * "broken link"           -> fix the path
+            * "not linked from docs/README.md" -> add it to the reading order
+            * "missing `tier:`"       -> add the front-matter
+            * "rebuttal prose"        -> move it to docs/design/design-log.md
+            * "§N does not exist"     -> fix the reference or add the heading
+            * "invariants"            -> you changed a wire constant in one
+                                         place; change it everywhere or revert
+
+          See docs/README.md "Maintaining these docs".
+          EOF

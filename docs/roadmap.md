@@ -1,85 +1,132 @@
-# Roadmap & Decision Log
+---
+tier: design
+---
+
+# Roadmap
 
 ## 1. Phases
 
-Each phase ends with something **demonstrably working**, in dependency
-order. Nothing later is started before its foundation exists.
+Each phase ends with something **demonstrably working**, in dependency order.
+Nothing later is started before its foundation exists.
+
+The ordering is deliberate: authority and consistency come before media and
+sync, because a media pipeline built on an unsettled authority model produces
+behaviour that cannot be specified, only demonstrated. M0 fixes the
+foundation first, in a simulator, with no network and no video.
+
+Every phase lists its **demo**: the thing you can run at the end. A phase
+without a passing demo is not done.
+
+### M0 — Protocol schema, simulator, authority model
+
+> One normative schema and a deterministic multi-peer simulation. No
+> WebRTC, no video.
+
+- `pw-proto`: canonical CBOR, envelope, message catalog, limits, manifest
+  head/chunks, Merkle proofs ([protocol.md](spec/protocol.md)). Types are
+  generated from [`schema/messages.yaml`](schema/messages.yaml) so the wire
+  table and the Rust structs cannot drift.
+- `pw-crypto`: Ed25519 + X25519 identities, AUTH transcript, certificates,
+  derived epoch keys ([identity.md](design/identity.md)).
+- `pw-core`: the pure `Event`/`Command` machine of
+  [core-api.md](spec/core-api.md); host lease/term, frozen rosters,
+  `VoteCertificate`/`TakeoverCertificate`, replay windows, and the five
+  state machines of [architecture.md](design/architecture.md) §5.1.
+- `pw-errors` (or a module): the codes in [errors.md](spec/errors.md), so
+  every shell renders the same failure the same way.
+- `pw-sim`: N virtual peers, fake clock, lossy/reordering network, churn,
+  partitions, malicious behaviours. Property tests for “no two hosts in a
+  term”, “no lost verified piece”, “certificates converge”, “rekey is
+  convergent”, “offline peer recovers via lobby”.
+- **Demo**: `pw-sim` runs a 5-peer room, passes a video proposal, loses the
+  host, elects a complete peer by certificate, survives a partition, and
+  recovers a peer that was offline across a rekey.
 
 ### M1 — Connectivity spine (proof of the mesh)
 
 > Two peers, one file, no video.
 
-- Cargo workspace, `pw-core` skeleton (envelope, identity, store trait,
-  zero-I/O discipline).
-- `pw-signal`: signaling relay (axum WS) + client, token derive (HKDF).
-- Transports: native (`webrtc-rs`) and browser (`web-sys`) behind the
-  Transport trait.
-- AUTH handshake, encrypted signaling envelopes.
-- **Demo**: CLI peer ↔ browser peer exchange a file's pieces end-to-end
-  (SHA-256 verified), across NATs, with the relay blind.
+- `pw-signal-client` (wasm-compatible) + `pw-signal-relay` (axum WS).
+- Invite grants, `JOIN_REQUEST`/`JOIN_ACCEPT`, room key/epoch, per-peer
+  `SignalEnvelope` encryption.
+- Transports: native (`webrtc-rs`) and browser (main-thread
+  `RTCPeerConnection`) behind the Transport adapter.
+- AUTH handshake, DTLS fingerprint binding, relay limits/aliases.
+- **STUN + TURN configuration from day one.** A TURN server (or a
+  documented self-host path) is required for “across NATs”; it is not an
+  M4 polish item.
+- **Demo**: CLI peer ↔ browser peer exchange a file's blocks end-to-end
+  (block Merkle proofs verified), across NATs, with the relay blind and a
+  TURN fallback available.
 
-### M2 — Watch party, minimal
+### M2 — Data plane and storage
 
-> First real room: one fixed video, play/pause/seek, browsers welcome.
+> The swarm moves bytes reliably before it moves video.
 
-- Manifest + segment table, fMP4 segmenter, remux + transcode-ahead
-  pipelines (ffmpeg), WASM transmuxer for browser sources.
-- Scheduler (window + rarest-first, capacity-proportional selection,
-  BDP-adaptive Q, CANCEL, hedged re-requests).
-- MSE player in the shared web UI, mpv adapter for CLI, storage backends
-  (sparse file / memory+OPFS).
-- SYNC + PI controller, buffering gate + START_AT.
+- Manifest head/chunks/appends, piece roots, block Merkle proofs.
+- Scheduler: window + rarest-first, capacity-proportional selection,
+  BDP-adaptive Q, `bufferedAmount` backpressure, CANCEL, hedged re-requests.
+- Native append-only store + journal; browser OPFS pack files; bitfield
+  persistence/scrub.
+- Roaring bitfields and validation.
+- **Demo**: 4 peers pre-seed a synthetic 1 GB file, one peer joins late and
+  fetches it with block-level verification; a poisoning peer is banned
+  without false positives.
+
+### M3 — Media pipeline, players, sync
+
+> First real watch party.
+
+- fMP4 segmenter, remux + transcode-ahead (ffmpeg), WASM transmuxer.
+- Room-wide codec/capability intersection; FMP4 default, WEBM only with
+  unanimous codec support.
+- MSE player (main thread) + mpv adapter; desktop control RPC + local media
+  protocol.
+- `SYNC`/`START_AT` with local receive anchor, corrected PI controller,
+  buffering gate.
 - **Demo**: 1 CLI host + 2 browser peers watch a transcoded-from-MKV video
-  in sync.
+  in sync; a Safari/WebKitGTK peer is not stranded by a WebM proposal.
 
-### M3 — Governance & resilience
+### M4 — Governance, host lifecycle, kicks
 
-> The product spec: proposals, votes, host lifecycle.
+> The product spec: proposals, votes, host leases, kicks.
 
-- PROPOSAL/VOTE/VOTE_RESULT, PLAY_VIDEO host transitions, KICK + banlists.
-- Free-roam + return-to-live, host-leave handling: degraded → takeover →
-  stalled → rejoin.
-- Local auto-bans (poison/sigfail) + BAN_REPORT gossip.
-- **Demo**: host leaves mid-film, a complete peer takes over seamlessly,
-  a kicked peer cannot return with the same key.
+- `PROPOSAL`/`VOTE`/`VOTE_CERT`, frozen rosters, certificate convergence.
+- `PLAY_VIDEO` host transitions with `HOST_LEASE`.
+- Free-roam + return-to-live; host-leave: degraded → challenge → takeover
+  certificate → stalled → rejoin.
+- `KICK` + `KickCertificate` + banlist + rekey/epoch rotation.
+- Local block-proof bans + advisory `BAN_REPORT`.
+- **Demo**: host leaves mid-film, a complete peer takes over with a
+  majority certificate; a kicked peer cannot return with the old key or old
+  epoch; a partition cannot create two hosts.
 
-### M4 — Hardening & polish
+### M5 — Hardening, social features, scale headroom
 
-- Full strike/rate-limit matrix, scoring refinements (power-of-two-choices),
-  endgame mode, TURN config path, TOFU known-peers display,
+- Full byte-rate/strike matrix, scoring refinements
+  (power-of-two-choices), endgame mode, TOFU known-peers display,
   passphrase-at-rest for native keys, bandwidth/RAM tuning from telemetry.
-
-### M5 — Social features & scale headroom
-
-- **Text chat** lands properly (CHAT exists from M1 envelopes, M5 gives it
-  persistence, notifications, moderation affordances).
+- **Text chat** polish: persistence, notifications, moderation affordances.
 - **Voice chat**: Opus media tracks on the existing RTCPeerConnections.
-   Browser: `getUserMedia`/`addTrack`, native: `cpal` capture → `opus`
-   encode → `webrtc-rs` sample tracks, per-receiver decode+mix, push-to-talk
-   default. Capability-negotiated (`VOICE` flag), so voice-less peers
-   interoperate. *(Confirmed: post-MVP by product decision.)*
+  Browser: `getUserMedia`/`addTrack`; native: `cpal` capture → `opus`
+  encode → `webrtc-rs` sample tracks; per-receiver decode+mix, push-to-talk
+  default. Capability-negotiated (`VOICE` flag), so voice-less peers
+  interoperate.
 - Partial-mesh overlay exploration (>16 peers), LAN discovery (mDNS) as a
-  signaling-free path, expiring invite tokens, subtitle track support.
+  signaling-free path, subtitle/multi-audio tracks, optional ABR ladder.
+
+---
 
 ## 2. Decision log
 
-| # | Decision | Alternatives considered | Why this won |
-|---|----------|------------------------|--------------|
-| D1 | **Rust everywhere** (one core → native + WASM) | Go + separate TS stack, Go-native + thin-browser | Browser peers must run the full stack, only Rust serves native+WASM from one codebase. Go would fork the implementation forever. |
-| D2 | **WebRTC as the only transport** | Raw TCP/QUIC for native, WebRTC just for browser | One protocol for all pairs, browsers force WebRTC anyway, DTLS encryption free. |
-| D3 | **Tiny signaling relay** (blind WS) | Manual copy-paste signaling, DHT | 3+-person rooms need hands-free rendezvous, relay sees only ciphertext and is self-hostable. Manual fallback kept possible by transport-agnostic envelopes. |
-| D4 | **Canonical format: fMP4 H.264/AAC** (+ WEBM profile) | Share originals, transcode everything to WebM | MSE universality + mpv compatibility + lossless remux path, WEBM kept only for browser-sourced files that can't transmux. |
-| D5 | **Remux if possible, else live transcode-ahead** | Transcode fully before sharing | Minutes of pre-watch delay is unacceptable, ~15 s head start + throttled-ahead encoder starts fast. Preset: **x264 veryfast** (confirmed). |
-| D6 | **Host = file owner, chosen by vote** | Creator-host, moderator roles | Product spec, matches "propose → vote → play". Creator gets zero privileges. |
-| D7 | **Host controls room transport, per-peer free-roam** | Anyone-controls, host-only with no escape | Social clarity + personal freedom: roam locally, "return to live" re-syncs (confirmed). |
-| D8 | **Governance = signed majority votes, no roles** | Moderator/veto models | No trust anchor needed, every peer tallies independently, cryptographic offenses skip the vote entirely. |
-| D9 | **Sync = PI controller on playback rate** | v1's 3-tier thresholds, full PID, NTP-style locks | Zero steady-state error (I kills clock-skew), no audible steps, ζ=1 no overshoot, D excluded (noise). Kp=0.04, Ki=0.0004. |
-| D10 | **Piece 512 KiB / block 64 KiB / segment 4 s** | Bigger pieces (fewer hashes), per-segment pieces | Manifest size vs verify granularity vs DataChannel-friendly messages, 4 s = DASH-sweet-spot seek granularity. |
-| D11 | **Full mesh ≤16 peers** | Partial mesh from day one, SFU | Simplicity and latency at social scale, protocol doesn't assume full connectivity → partial mesh later without breakage. |
-| D12 | **Desktop = Tauri + shared web UI + MSE, mpv auto-fallback** | mpv-always, native GUI (egui/iced) | One UI for browser+desktop, integrated experience, fallback only when WebKitGTK lacks gst codecs (confirmed). |
-| D13 | **Storage: native sparse file / browser memory+OPFS sliding window** | Browser full-download, IDB blobs | Browsers can't be full archivers at 7 GB/film, sliding window + rare-reserve keeps them net contributors. |
-| D14 | **Ed25519 identity + room_psk authorization** | Passwords, PAKE, relay-side ACLs | No server state, signatures double as vote/governance proofs, token = capability. |
-| D15 | **Voice chat post-MVP (M5)** | In MVP | DataChannel-first keeps M1–M4 shippable, media tracks slot into existing connections via capability flags (confirmed). |
+Moved to [design-log.md](design/design-log.md), where each decision records
+the alternative that was rejected and why. Twenty-eight decisions (D1–D28)
+plus thirty-two corrections (C1–C32) found during the rewrite.
+
+If you are about to change a constant, add a message type, or re-open a
+closed question, read that file first.
+
+---
 
 ## 3. Explicit non-goals (v1)
 
@@ -88,12 +135,24 @@ order. Nothing later is started before its foundation exists.
 - Mobile apps (browser on mobile *may* work, not a target).
 - Subtitle tracks, multi-audio, ABR ladders (single-quality stream).
 - Original-quality side-channel downloads.
+- General Byzantine consensus or anonymity against a global observer.
+- Partial-mesh gossip (designed for later, not specified in v1).
+
+---
 
 ## 4. Telemetry that will validate or kill assumptions
 
-Collect (locally, opt-in) during M2–M4 dogfooding: cold-start latency,
-stall count/duration per session, host-uplink saturation %, takeover
-frequency/latency, transcode-ahead underruns, Q adaptation distribution,
-CANCEL volume per seek. Each maps to a row in
-[performance.md](performance.md). If reality disagrees, the model (and the
-constants) get revised, not the other way around.
+Collect (locally, opt-in) during M2–M5 dogfooding:
+
+- cold-start latency, stall count/duration per session;
+- host-uplink saturation %, takeover frequency/latency;
+- transcode-ahead underruns and CPU load;
+- Q adaptation distribution and `bufferedAmount` high-water marks;
+- CANCEL volume per seek;
+- certificate convergence time and failed-takeover reasons;
+- block-proof failure rate and false-ban reports;
+- browser memory (hot tier + MSE + WASM) and quota failures.
+
+Each maps to a row in [performance.md](design/performance.md). If reality
+disagrees, the model (and the constants) get revised, not the other way
+around.
