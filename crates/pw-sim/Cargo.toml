@@ -1,0 +1,14 @@
+[package]
+name = "pw-sim"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch v3 deterministic multi-peer simulator for testing CRDT convergence, host takeover, scheduler, and sync."
+
+[dependencies]
+bytes.workspace = true
+pw-core.workspace = true
+
+[lints]
+workspace = true

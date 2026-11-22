@@ -1,8 +1,8 @@
-# PeerWatch v2 message catalog — SINGLE SOURCE OF TRUTH.
+# PeerWatch v3 message catalog — SINGLE SOURCE OF TRUTH.
 #
-# `scripts/gen_catalog.py` renders this into the table in
+# `scripts/gen_catalog.py` renders this into the tables in
 # docs/spec/protocol.md §7. `scripts/lint_invariants.py` checks that the
-# rendered table is current (CI fails if someone edits the markdown by hand).
+# rendered tables are current.
 #
 # Fields:
 #   id       message type, u16 (stable; never renumber)
@@ -13,7 +13,7 @@
 #   when     one-line description of when it is sent
 #   since    protocol version that introduced it
 
-version: 2
+version: 3
 
 channels:
   control: { sctp: reliable-ordered }
@@ -22,106 +22,117 @@ channels:
 
 messages:
   # ── 7.1 Identity and transport ─────────────────────────────────────────
-  - { id: 0x01, name: HELLO,  signed: false, channel: control, since: 2,
+  - { id: 0x01, name: HELLO,  signed: false, channel: control, since: 3,
       payload: "{ version, pubkey, enc_pubkey, nonce, caps, max_message_size }",
       when: "first message each way on a new control channel; every field is bound by AUTH" }
-  - { id: 0x02, name: AUTH,   signed: true,  channel: control, since: 2,
+  - { id: 0x02, name: AUTH,   signed: false, channel: control, since: 3,
       payload: "{ auth_tag, auth_sig } per §4.3",
-      when: "answers HELLO; carries both an envelope sig and a transcript-bound auth_sig" }
-  - { id: 0x03, name: PING,   signed: false, channel: control, since: 2,
+      when: "answers HELLO; single transcript-bound signature + room_secret MAC" }
+  - { id: 0x03, name: PING,   signed: false, channel: control, since: 3,
       payload: "{ t0 }", when: "every 5 s per connection" }
-  - { id: 0x04, name: PONG,   signed: false, channel: control, since: 2,
+  - { id: 0x04, name: PONG,   signed: false, channel: control, since: 3,
       payload: "{ t0 }", when: "echoes PING; feeds the windowed-min RTT estimator" }
-  - { id: 0x05, name: BYE,    signed: false, channel: control, since: 2,
-      payload: "{ code, reason }", when: "clean exit or rejection; codes in errors.md" }
+  - { id: 0x05, name: BYE,    signed: true,  channel: control, since: 3,
+      payload: "{ code, reason }", when: "clean exit (prunes active roster) or rejection; codes in errors.md" }
 
-  # ── 7.2 Room and authority ─────────────────────────────────────────────
-  - { id: 0x10, name: ROOM_STATE, signed: host, channel: control, since: 2,
-      payload: "{ state_version, term, host_lease, roster, banlist, banlist_complete, banlist_root, active_proposals, current_stream }",
-      when: "after AUTH, and on any change" }
-  - { id: 0x11, name: PRESENCE,   signed: false, channel: control, since: 2,
+  # ── 7.2 Room state (CRDT fact set) and presence ────────────────────────
+  - { id: 0x10, name: STATE_DIGEST,    signed: false, channel: control, since: 3,
+      payload: "{ member_hashes, kick_hashes, lease_term, lease_hash, proposal_ids, queue_head, signal_key_seqs }",
+      when: "after AUTH and periodically on change; reconciles CRDT room state" }
+  - { id: 0x11, name: STATE_SYNC,      signed: false, channel: bulk, since: 3,
+      payload: "{ genesis?, member_adds, kick_certs, host_lease?, proposals, queue_events, signal_keys }",
+      when: "sends self-verifying signed records missing from a peer's STATE_DIGEST" }
+  - { id: 0x12, name: HOST_LEASE,      signed: host,  channel: control, since: 3,
+      payload: "HostLease (§5.1)",
+      when: "broadcast on vote pass, takeover, or collaborative queue advance" }
+  - { id: 0x13, name: PEER_SIGNAL_KEY, signed: true,  channel: control, since: 3,
+      payload: "{ room_id, signal_pub, seq }",
+      when: "self-signed signaling key announcement; gossiped in room state" }
+  - { id: 0x14, name: PRESENCE,        signed: false, channel: control, since: 3,
       payload: "{ status, buffered_ms }",
-      when: "on change; status only, no media position" }
-  - { id: 0x12, name: HOST_LEASE, signed: host, channel: control, since: 2,
-      payload: "HostLease",
-      when: "on election or takeover; also carried inside ROOM_STATE" }
-  - { id: 0x13, name: REKEY,      signed: true, channel: control, since: 2,
-      payload: "{ new_epoch, basis, basis_hash, wrapped_keys }",
-      when: "after a kick or scheduled rotation; key is derived, not chosen" }
+      when: "on change; liveness and buffer depth only, no media position" }
 
   # ── 7.3 Manifest ───────────────────────────────────────────────────────
-  - { id: 0x18, name: MANIFEST_HEAD,   signed: host,  channel: bulk, since: 2,
-      payload: "ManifestHead", when: "on stream activation and on demand" }
-  - { id: 0x19, name: MANIFEST_CHUNK,  signed: false, channel: bulk, since: 2,
+  - { id: 0x18, name: MANIFEST_HEAD,   signed: host,  channel: bulk, since: 3,
+      payload: "ManifestHead (§6.3)", when: "on stream activation and on demand" }
+  - { id: 0x19, name: MANIFEST_CHUNK,  signed: false, channel: bulk, since: 3,
       payload: "{ stream_id, version, chunk_index, chunk_hash, bytes }",
-      when: "snapshot transfer; designated responder only" }
-  - { id: 0x1A, name: MANIFEST_GET,    signed: false, channel: bulk, since: 2,
+      when: "snapshot transfer (~100 KB total for 2 h movie); designated responder only" }
+  - { id: 0x1A, name: MANIFEST_GET,    signed: false, channel: bulk, since: 3,
       payload: "{ stream_id, version, chunk_indices, responder }",
       when: "request missing chunks; `responder` prevents N-way amplification" }
-  - { id: 0x1B, name: MANIFEST_APPEND, signed: host,  channel: bulk, since: 2,
-      payload: "§6.5", when: "live-transcode growth" }
-  - { id: 0x1C, name: MANIFEST_FINAL,  signed: host,  channel: bulk, since: 2,
-      payload: "§6.5", when: "stream complete; assigns content_id" }
+  - { id: 0x1B, name: MANIFEST_APPEND, signed: host,  channel: bulk, since: 3,
+      payload: "§6.5", when: "live-transcode segment growth (contiguous or post-seek)" }
+  - { id: 0x1C, name: MANIFEST_FINAL,  signed: host,  channel: bulk, since: 3,
+      payload: "§6.5", when: "stream complete; assigns final content_id" }
 
   # ── 7.4 Swarm data ─────────────────────────────────────────────────────
-  - { id: 0x20, name: BITFIELD, signed: false, channel: control, since: 2,
-      payload: "{ stream_id, version, bits }",
-      when: "every 1 s to every peer; Roaring, run-optimized" }
-  - { id: 0x21, name: REQUEST,  signed: false, channel: data, since: 2,
-      payload: "{ stream_id, want: [{ piece, block_mask }] }",
-      when: "batched; block-mask total must be <= Q" }
-  - { id: 0x22, name: BLOCK,    signed: false, channel: data, since: 2,
-      payload: "{ stream_id, piece, block, block_count, bytes, proof }",
-      when: "one 32 KiB block plus its Merkle path" }
-  - { id: 0x23, name: CANCEL,   signed: false, channel: data, since: 2,
-      payload: "{ stream_id, want: [...] }",
+  - { id: 0x20, name: AVAILABILITY, signed: false, channel: control, since: 3,
+      payload: "{ stream_id, version, segments: Bitmap, frontier: [{ seg, block_mask }] }",
+      when: "every 1 s to every peer; compact raw/RLE segment bitmap + active frontier block masks" }
+  - { id: 0x21, name: REQUEST,      signed: false, channel: data, since: 3,
+      payload: "{ stream_id, want: [{ seg, block_indices }] }",
+      when: "batched block request; total requested blocks <= Q" }
+  - { id: 0x22, name: BLOCK,        signed: false, channel: data, since: 3,
+      payload: "{ stream_id, seg, block, bytes, proof }",
+      when: "one <=32 KiB block plus its Merkle path to segment_root" }
+  - { id: 0x23, name: CANCEL,       signed: false, channel: data, since: 3,
+      payload: "{ stream_id, want: [{ seg, block_indices }] }",
       when: "kills queued requests only; in-flight blocks are stored anyway" }
 
-  # ── 7.5 Sync and host lifecycle ────────────────────────────────────────
-  - { id: 0x28, name: SYNC,               signed: host,  channel: control, since: 2,
+  # ── 7.5 Sync, collaborative control, and host lifecycle ────────────────
+  - { id: 0x28, name: SYNC,               signed: host,  channel: control, since: 3,
       payload: "{ stream_id, term, seq, t_media_ms, state, rate }",
-      when: "every 1 s and on any transport event" }
-  - { id: 0x29, name: START_AT,           signed: host,  channel: control, since: 2,
+      when: "every 1 s and immediately on any transport event" }
+  - { id: 0x29, name: START_AT,           signed: host,  channel: control, since: 3,
       payload: "{ stream_id, term, seq, t_media_ms }",
       when: "after the buffering gate" }
-  - { id: 0x2A, name: STALL_NOTICE,       signed: true,  channel: control, since: 2,
+  - { id: 0x2A, name: STALL_NOTICE,       signed: true,  channel: control, since: 3,
       payload: "{ stream_id, term, seq, t_media_ms, reason }",
       when: "local starvation; informs the room and the scheduler" }
-  - { id: 0x2B, name: TAKEOVER_CLAIM,     signed: true,  channel: control, since: 2,
-      payload: "TakeoverClaim", when: "a candidate claims the next term" }
-  - { id: 0x2C, name: TAKEOVER_ACK,       signed: true,  channel: control, since: 2,
-      payload: "TakeoverAck", when: "majority acknowledgement of a claim" }
-  - { id: 0x2D, name: CHALLENGE,          signed: false, channel: control, since: 2,
-      payload: "{ stream_id, nonce, blocks: [{ piece, block }] }",
-      when: "proof-of-possession challenge; must be in-region" }
-  - { id: 0x2E, name: CHALLENGE_RESPONSE, signed: false, channel: data, since: 2,
+  - { id: 0x2B, name: TAKEOVER_CLAIM,     signed: true,  channel: control, since: 3,
+      payload: "TakeoverClaim (§5.3)", when: "a candidate claims the next term after host loss" }
+  - { id: 0x2C, name: TAKEOVER_ACK,       signed: true,  channel: control, since: 3,
+      payload: "TakeoverAck (§5.3)", when: "peer acknowledges a claim after verifying possession" }
+  - { id: 0x2D, name: CHALLENGE,          signed: false, channel: control, since: 3,
+      payload: "{ stream_id, nonce, blocks: [{ seg, block }] }",
+      when: "optional proof-of-possession check during takeover; must be in-region" }
+  - { id: 0x2E, name: CHALLENGE_RESPONSE, signed: false, channel: data, since: 3,
       payload: "{ stream_id, nonce, index, block }",
-      when: "one block per message; only to the challenge issuer" }
-  - { id: 0x2F, name: READY,              signed: false, channel: control, since: 2,
+      when: "one block + Merkle proof per message; sent only to the challenge issuer" }
+  - { id: 0x2F, name: READY,              signed: false, channel: control, since: 3,
       payload: "{ stream_id, term, buffered_ms }",
       when: "buffering-gate report" }
+  - { id: 0x35, name: CONTROL_REQ,        signed: true,  channel: control, since: 3,
+      payload: "{ stream_id, term, action: Play | Pause | Seek(t_ms) | SetRate(rate) }",
+      when: "Collaborative mode only: member asks current Host to update room transport" }
 
-  # ── 7.6 Governance and social ──────────────────────────────────────────
-  - { id: 0x30, name: PROPOSAL,    signed: true, channel: control, since: 2,
-      payload: "Proposal", when: "broadcast" }
-  - { id: 0x31, name: VOTE,        signed: true, channel: control, since: 2,
-      payload: "Vote", when: "broadcast; non-changeable, equivocation is fatal" }
-  - { id: 0x32, name: VOTE_CERT,   signed: true, channel: control, since: 2,
-      payload: "VoteCertificate", when: "leader publishes the frozen-roster tally" }
-  - { id: 0x33, name: KICK_NOTICE, signed: true, channel: control, since: 2,
-      payload: "{ ban: BanEntry }", when: "carries the passed KickCertificate" }
-  - { id: 0x34, name: BAN_REPORT,  signed: true, channel: control, since: 2,
-      payload: "{ offender, reason, evidence: BlockProof / null }",
-      when: "advisory gossip; evidence needs sender_sig to be actionable" }
-  - { id: 0x38, name: CHAT,        signed: true, channel: control, since: 2,
+  # ── 7.6 Governance, queue, and social ──────────────────────────────────
+  - { id: 0x30, name: PROPOSAL,        signed: true,  channel: control, since: 3,
+      payload: "Proposal (§5.2)", when: "broadcast PLAY_VIDEO or KICK proposal" }
+  - { id: 0x31, name: VOTE,            signed: true,  channel: control, since: 3,
+      payload: "Vote (§5.2)", when: "broadcast; non-changeable, equivocation is fatal" }
+  - { id: 0x32, name: VOTE_CERT,       signed: true,  channel: control, since: 3,
+      payload: "VoteCertificate (§5.2)", when: "publishes frozen active-roster majority tally" }
+  - { id: 0x33, name: KICK_NOTICE,     signed: true,  channel: control, since: 3,
+      payload: "{ ban: BanEntry }", when: "carries a verified KickCertificate" }
+  - { id: 0x34, name: PROPOSAL_COMPAT, signed: false, channel: control, since: 3,
+      payload: "{ proposal_id, playable: bool, reason? }",
+      when: "peer reports live MediaSource.isTypeSupported result for a proposal's codec" }
+  - { id: 0x36, name: QUEUE_ADD,       signed: true,  channel: control, since: 3,
+      payload: "{ entry_id, stream_id, manifest_head, pipeline, lamport }",
+      when: "Collaborative mode: enqueue a video to the shared playlist" }
+  - { id: 0x37, name: QUEUE_REMOVE,    signed: true,  channel: control, since: 3,
+      payload: "{ entry_id, lamport }",
+      when: "Collaborative mode: remove an entry (by its proposer or after playback)" }
+  - { id: 0x38, name: CHAT,            signed: true,  channel: control, since: 3,
       payload: "{ msg_id, ts_ms, lamport, body }",
       when: "broadcast; dedup by msg_id; order by (lamport, ts_ms, peer_id)" }
 
 reserved:
-  - { range: "0x40-0x4F", use: "voice control and media tracks (M5)" }
+  - { range: "0x40-0x4F", use: "voice control and media tracks (v2 / post-v1)" }
   - { range: "0xF0-0xFF", use: "experimental; ignored by default" }
 
-# Signing classes, rendered as the ✍ column.
 signed_legend:
   true: "✍"
   host: "✍(host)"

@@ -4,6 +4,19 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "PeerWatch CLI — clap-based command line peer; optional ratatui room interface."
+description = "PeerWatch v3 CLI binary: native daemon, local web UI launcher, control client, and optional TUI."
+
+[[bin]]
+name = "peerwatch"
+path = "src/main.rs"
 
 [dependencies]
+clap.workspace = true
+pw-core.workspace = true
+pw-node.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

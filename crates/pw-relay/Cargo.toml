@@ -1,0 +1,22 @@
+[package]
+name = "pw-relay"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch v3 stateless in-memory WebSocket signaling mailbox."
+
+[[bin]]
+name = "pw-relay"
+path = "src/main.rs"
+
+[dependencies]
+axum.workspace = true
+clap.workspace = true
+pw-core.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

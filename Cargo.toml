@@ -1,22 +1,51 @@
 [workspace]
 members = [
     "crates/pw-core",
-    "crates/pw-transport",
-    "crates/pw-media",
-    "crates/pw-player",
-    "crates/pw-signal",
+    "crates/pw-wasm",
+    "crates/pw-node",
     "crates/pw-cli",
-    "crates/pw-app",
+    "crates/pw-relay",
+    "crates/pw-sim",
 ]
 resolver = "2"
 
-# Shared package metadata inherited by every member crate.
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 authors = ["Vaibhav Sijaria"]
 license = "MIT"
-# repository = "..."   # fill in once a public remote exists
 
-# [workspace.dependencies]
-# Shared dependency versions will be declared here as crates are implemented.
+[workspace.dependencies]
+pw-core = { path = "crates/pw-core" }
+pw-node = { path = "crates/pw-node" }
+
+# Pure / WASM-compatible dependencies
+blake3 = "1.8"
+bytes = { version = "1.10", features = ["serde"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
+ciborium = "0.2"
+ed25519-dalek = { version = "3.0", default-features = false, features = ["alloc", "fast", "zeroize"] }
+hkdf = "0.13"
+hmac = "0.13"
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.11"
+thiserror = "2.0"
+x25519-dalek = { version = "3.0", default-features = false, features = ["precomputed-tables", "static_secrets", "zeroize"] }
+
+# Browser WASM bridge
+wasm-bindgen = "0.2"
+
+# Native-only dependencies (never in pw-core or pw-wasm)
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4.5", features = ["derive"] }
+str0m = "0.25"
+tokio = { version = "1.46", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

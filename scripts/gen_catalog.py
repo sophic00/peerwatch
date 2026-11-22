@@ -4,22 +4,6 @@ docs/spec/protocol.md §7, and (optionally) verify they are current.
 
     python3 scripts/gen_catalog.py            # rewrite the tables
     python3 scripts/gen_catalog.py --check    # exit 1 if the tables are stale
-
-Each table in protocol.md §7 is delimited by per-section markers:
-
-    <!-- CATALOG:7.2 -->
-    ...
-    <!-- /CATALOG:7.2 -->
-
-Everything outside those markers — the legend, the room-object schemas, the
-designated-responder rule, the prose notes — is hand-written and is never
-touched. Per-section markers rather than one big block, because the prose is
-interleaved with the tables and must survive a regeneration.
-
-Why this exists: the 32-row message catalog used to be maintained by hand in
-two files (protocol.md and a now-deleted protocol.md copy), and the
-signed/unsigned split in three more. That is a guaranteed drift. The YAML is
-the source of truth; the markdown is output.
 """
 
 from __future__ import annotations
@@ -33,6 +17,7 @@ DOCS = Path(__file__).resolve().parent.parent / "docs"
 SCHEMA = DOCS / "schema" / "messages.yaml"
 PROTOCOL = DOCS / "spec" / "protocol.md"
 
+
 def begin(sec: str) -> str:
     return f"<!-- CATALOG:{sec} -->"
 
@@ -40,27 +25,21 @@ def begin(sec: str) -> str:
 def end(sec: str) -> str:
     return f"<!-- /CATALOG:{sec} -->"
 
-# (section number, message-id range). The heading text lives in the markdown,
-# not here, so that renaming a heading does not require touching this file.
-SECTIONS = [
-    ("7.1", 0x01, 0x0F),
-    ("7.2", 0x10, 0x17),
-    ("7.3", 0x18, 0x1F),
-    ("7.4", 0x20, 0x27),
-    ("7.5", 0x28, 0x2F),
-    ("7.6", 0x30, 0x3F),
-    ("7.7", None, None),      # reserved ranges
+
+# Explicit ID sets per section so non-contiguous additions (e.g. CONTROL_REQ
+# in 7.5 alongside 0x28..0x2F) remain crystal clear and deterministic.
+SECTIONS: list[tuple[str, set[int] | None]] = [
+    ("7.1", set(range(0x01, 0x10))),
+    ("7.2", set(range(0x10, 0x18))),
+    ("7.3", set(range(0x18, 0x20))),
+    ("7.4", set(range(0x20, 0x28))),
+    ("7.5", set(range(0x28, 0x30)) | {0x35}),
+    ("7.6", {0x30, 0x31, 0x32, 0x33, 0x34, 0x36, 0x37, 0x38}),
+    ("7.7", None),  # reserved ranges
 ]
 
 
 def load_yaml(path: Path) -> dict:
-    """Minimal YAML loader for this file's subset.
-
-    The repo has no Python dependencies by design (CI must be able to run the
-    lint on a bare runner), and this file uses only: nested maps, lists of
-    flow maps, and quoted strings. If the schema grows past that, switch to
-    `pip install pyyaml` rather than growing this function.
-    """
     try:
         import yaml  # type: ignore
     except ImportError:
@@ -74,21 +53,33 @@ def _fallback_load(path: Path) -> dict:
     """Parse the flow-map subset without PyYAML."""
     text = path.read_text()
     out: dict = {"messages": [], "reserved": []}
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("- {") and s.endswith("}"):
-            body = s[3:-1]
+    buf = ""
+    in_item = False
+    for raw_line in text.splitlines():
+        s = raw_line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.startswith("- {"):
+            buf = s
+            in_item = True
+        elif in_item:
+            buf += " " + s
+        else:
+            continue
+
+        if in_item and buf.endswith("}"):
+            in_item = False
+            body = buf[3:-1]
             entry = {}
             for part in re.split(r",\s*(?=[a-z_]+:)", body):
                 if ":" not in part:
                     continue
                 k, v = part.split(":", 1)
                 k = k.strip()
-                v = v.strip().strip('"')
+                v = v.strip()
                 if v.startswith('"') and v.endswith('"'):
                     v = v[1:-1]
                 entry[k] = v
-            # route to messages or reserved by the presence of an id
             if "id" in entry:
                 out["messages"].append(entry)
             elif "range" in entry:
@@ -96,21 +87,15 @@ def _fallback_load(path: Path) -> dict:
     return out
 
 
-def _legend(schema: dict) -> dict:
-    legend = schema.get("signed_legend", {})
-    return legend
-
-
 def _sig_cell(schema: dict, m: dict) -> str:
-    legend = _legend(schema)
+    legend = schema.get("signed_legend", {})
     sig = m.get("signed", False)
     key = ("true" if sig else "false") if isinstance(sig, bool) else str(sig)
-    return legend.get(key, {"true": "✍", "false": "—"}.get(key, "—"))
+    return legend.get(key, {"true": "✍", "false": "—", "host": "✍(host)"}.get(key, "—"))
 
 
-def render_section(schema: dict, sec: str, lo, hi) -> str:
-    """Render one table. `lo is None` renders the reserved-range table."""
-    if lo is None:
+def render_section(schema: dict, ids: set[int] | None) -> str:
+    if ids is None:
         lines = ["| Range | Use |", "|-------|-----|"]
         for r in schema.get("reserved", []):
             lines.append(f"| {r['range']} | {r['use']} |")
@@ -120,7 +105,7 @@ def render_section(schema: dict, sec: str, lo, hi) -> str:
     for m in schema["messages"]:
         m = dict(m)
         mid = int(m["id"], 16) if isinstance(m.get("id"), str) else m["id"]
-        if lo <= mid <= hi:
+        if mid in ids:
             m["_id"] = mid
             rows.append(m)
 
@@ -140,17 +125,16 @@ def render_section(schema: dict, sec: str, lo, hi) -> str:
 
 def splice(protocol_text: str, schema: dict) -> str:
     out = protocol_text
-    for sec, lo, hi in SECTIONS:
+    for sec, ids in SECTIONS:
         b, e = begin(sec), end(sec)
         if b not in out or e not in out:
             raise SystemExit(
                 f"markers {b!r} / {e!r} not found in {PROTOCOL}.\n"
-                "Add them around the table for that section once; the "
-                "generator only replaces what is between them."
+                "Add them around the table for that section once."
             )
         head, rest = out.split(b, 1)
         _, tail = rest.split(e, 1)
-        out = f"{head}{b}\n{render_section(schema, sec, lo, hi)}\n{e}{tail}"
+        out = f"{head}{b}\n{render_section(schema, ids)}\n{e}{tail}"
     return out
 
 

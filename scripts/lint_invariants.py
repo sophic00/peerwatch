@@ -1,26 +1,18 @@
 #!/usr/bin/env python3
-"""Lint the documentation set for drift.
+"""Lint the PeerWatch v3 documentation set for drift.
 
     python3 scripts/lint_invariants.py           # human output, exit 1 on error
     python3 scripts/lint_invariants.py --json    # machine output
 
-Checks, in order of how likely they are to catch a real mistake:
-
-  1. INVARIANTS   — the numeric constants in docs/README.md are the only
-                    allowed values for those facts anywhere in docs/. A doc
-                    that says "64 KiB blocks" or "piece = 8 blocks" fails.
-  2. CATALOG      — the generated message tables match schema/messages.yaml.
+Checks:
+  1. INVARIANTS   — numeric constants match docs/README.md (32 KiB block,
+                    ~4 s segment, 64 KiB envelope, 2.0 s hard-seek, ±5% clamp).
+  2. CATALOG      — rendered message tables match schema/messages.yaml.
   3. LINKS        — every relative .md link resolves to a file.
   4. REACHABLE    — every doc is linked from docs/README.md (no orphans).
-  5. TIER         — every doc declares `tier:` front-matter, and the tier
-                    matches its directory.
-  6. HEADINGS     — cross-references like "§4.3" name a heading that exists.
-  7. REBUTTALS    — no "the old design was wrong"-style prose outside
-                    docs/design/design-log.md.
-
-Why a linter and not a review checklist: every one of these has already
-drifted once during the v2 rewrite. The README's "invariants every document
-must respect" section is only real if something enforces it.
+  5. TIER         — every doc declares `tier:` front-matter matching its dir.
+  6. HEADINGS     — `§N.M` references resolve to an existing heading.
+  7. REBUTTALS    — no "old design was wrong"-style prose outside design-log.md.
 """
 
 from __future__ import annotations
@@ -35,40 +27,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 
-# ── 1. Invariants ──────────────────────────────────────────────────────────
-#
-# Each entry: (name, regex that finds a claim, predicate on the captured
-# value). A claim is a number immediately followed by a unit. We only flag
-# values that contradict the invariant; unrelated numbers are ignored.
-
 INVARIANTS = [
     {
         "name": "block size",
-        # matches "32 KiB block", "block = 32 KiB", "block of 32 KiB"
         "allowed": {"32", "32.0"},
         "patterns": [
             r"\b(\d+)\s*KiB\s*block",
             r"\bblock\s*(?:size\s*)?(?:=|of|:)\s*(\d+)\s*KiB",
         ],
         "why": "block = 32 KiB (protocol.md §6.1)",
-    },
-    {
-        "name": "piece size",
-        "allowed": {"512"},
-        "patterns": [
-            r"\b(\d+)\s*KiB\s*piece",
-            r"\bpiece\s*(?:size\s*)?(?:=|of|:)\s*(\d+)\s*KiB",
-        ],
-        "why": "piece = 512 KiB (protocol.md §6.1)",
-    },
-    {
-        "name": "blocks per piece",
-        "allowed": {"16"},
-        "patterns": [
-            r"\b(\d+)\s*blocks?\s*(?:=|per)\s*(?:1\s*)?piece\b",
-            r"\bpiece\s*(?:size\s*)?(?:=|of|:)\s*(\d+)\s*blocks\b",
-        ],
-        "why": "16 blocks = 1 piece (protocol.md §6.1)",
     },
     {
         "name": "segment target",
@@ -88,31 +55,34 @@ INVARIANTS = [
         ],
         "why": "envelope <= 64 KiB default (protocol.md §1.4)",
     },
+    {
+        "name": "no v2 piece-size drift",
+        "allowed": set(),
+        "patterns": [
+            r"\b(512)\s*KiB\s*piece",
+            r"\bpiece\s*(?:size\s*)?(?:=|of|:)\s*(512)\s*KiB",
+        ],
+        "why": "v3 collapsed 512 KiB pieces into 2-level Segment -> Block (protocol.md §6.1)",
+    },
 ]
 
-# Values that are deliberately discussed as *rejected* alternatives inside the
-# design log, and as historical notes in the spec.
 EXEMPT_FILES = {"design/design-log.md"}
 EXEMPT_LINE_MARKERS = (
     "rejected",
-    "was `WEBM_OK`",
     "earlier revision",
     "an earlier",
     "removed",
     "no longer",
     "used to",
+    "replaced",
 )
-
-# ── 7. Rebuttal prose ─────────────────────────────────────────────────────
 
 REBUTTAL = re.compile(
     r"\b(the old (?:design|claim|rule|formula|roadmap|command|docs|"
-    r"v1|“)|old docs|v1 used|v1's|was wrong|was too strong|was not safe|"
+    r"v1|v2|“)|old docs|v1 used|v1's|was wrong|was too strong|was not safe|"
     r"hand-wavy|misleading name)\b",
     re.IGNORECASE,
 )
-
-# ── helpers ───────────────────────────────────────────────────────────────
 
 
 def doc_files() -> list[Path]:
@@ -121,20 +91,6 @@ def doc_files() -> list[Path]:
 
 def rel(p: Path) -> str:
     return str(p.relative_to(DOCS))
-
-
-def strip_code_fences(text: str) -> str:
-    """Remove fenced code blocks so lint does not read examples as claims."""
-    out, infence = [], False
-    for line in text.splitlines():
-        if line.lstrip().startswith("```"):
-            infence = not infence
-            continue
-        out.append("" if infence else line)
-    return "\n".join(out)
-
-
-# ── checks ────────────────────────────────────────────────────────────────
 
 
 def check_invariants() -> list[str]:
@@ -152,10 +108,10 @@ def check_invariants() -> list[str]:
                     for m in re.finditer(pat, line, re.IGNORECASE):
                         val = m.group(1)
                         if val not in inv["allowed"]:
+                            expected = "/".join(sorted(inv["allowed"])) or "none"
                             errs.append(
                                 f"{r}:{lineno}: {inv['name']}: found {val}, "
-                                f"expected {'/'.join(sorted(inv['allowed']))}"
-                                f" -- {inv['why']}"
+                                f"expected {expected} -- {inv['why']}"
                             )
     return errs
 
@@ -227,8 +183,6 @@ SECTION_REF = re.compile(r"§(\d+(?:\.\d+)*)")
 
 
 def check_section_refs() -> list[str]:
-    """A `§N.M` reference must exist as a numbered heading in the target file,
-    or in the same file if no file is named."""
     errs = []
     headings: dict[Path, set[str]] = {}
     for f in doc_files():
@@ -239,8 +193,6 @@ def check_section_refs() -> list[str]:
         for lineno, line in enumerate(text.splitlines(), 1):
             for m in SECTION_REF.finditer(line):
                 sec = m.group(1)
-                # Which file does this § refer to? Nearest preceding link in
-                # the same line or the same sentence, else this file.
                 tgt = f.resolve()
                 link = None
                 for lm in LINK.finditer(line):
@@ -250,9 +202,6 @@ def check_section_refs() -> list[str]:
                     if cand in headings:
                         tgt = cand
                 if sec not in headings.get(tgt, set()):
-                    # A section number that exists nowhere in the docs at all
-                    # is almost certainly a typo; one that exists in a
-                    # sibling file is a soft warning we skip.
                     if not any(sec in hs for hs in headings.values()):
                         errs.append(
                             f"{rel(f)}:{lineno}: §{sec} does not exist "

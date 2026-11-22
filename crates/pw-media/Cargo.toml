@@ -1,9 +1,0 @@
-[package]
-name = "pw-media"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-description = "PeerWatch media pipeline — ffprobe/ffmpeg subprocess (probe, remux, transcode-ahead), fMP4 segmenter, and WASM transmuxer."
-
-[dependencies]

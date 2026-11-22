@@ -1,0 +1,17 @@
+[package]
+name = "pw-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch v3 browser Web Worker WASM shell and OPFS pack-store bridge."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pw-core.workspace = true
+wasm-bindgen.workspace = true
+
+[lints]
+workspace = true

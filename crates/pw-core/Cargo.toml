@@ -4,6 +4,20 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "PeerWatch core protocol logic — envelope/manifest types, piece store, scheduler, sync controller, governance, identity/crypto. Zero I/O; targets native and wasm32."
+description = "Pure Sans-I/O PeerWatch v3 protocol, crypto, CRDT room state, segment Merkle integrity, scheduler, and sync controller (native + wasm32)."
 
 [dependencies]
+blake3.workspace = true
+bytes.workspace = true
+chacha20poly1305.workspace = true
+ciborium.workspace = true
+ed25519-dalek.workspace = true
+hkdf.workspace = true
+hmac.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+x25519-dalek.workspace = true
+
+[lints]
+workspace = true

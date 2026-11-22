@@ -1,0 +1,19 @@
+[package]
+name = "pw-node"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PeerWatch v3 native Tokio runtime: str0m WebRTC, disk segment store, ffmpeg pipeline, mpv adapter, local web UI server, and signaling client."
+
+[dependencies]
+axum.workspace = true
+bytes.workspace = true
+pw-core.workspace = true
+str0m.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true
